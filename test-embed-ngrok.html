@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entab Chatbot Widget Demo (ngrok)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f8fb;
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .info {
+      background: #e3f2fd;
+      border: 1px solid #2196f3;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+      max-width: 500px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="info">
+    <h2>Entab Chatbot Widget Demo</h2>
+    <p>This page demonstrates how to embed the Entab chatbot widget using a single &lt;script&gt; tag.</p>
+    <p><strong>Instructions:</strong></p>
+    <ol style="text-align:left;max-width:400px;margin:0 auto;">
+      <li>Start your Vite dev server (<code>npm run dev</code>).</li>
+      <li>Start ngrok (<code>ngrok http 5173</code>).</li>
+      <li>Copy your ngrok public URL and replace <code>YOUR_NGROK_URL</code> below.</li>
+      <li>Open this HTML file in your browser.</li>
+    </ol>
+    <p style="margin-top:1em;">You should see a floating chat button appear on the page.</p>
+  </div>
+
+  <!-- Paste your ngrok public link below -->
+  <script src="https://0a10-2405-201-401b-c9fb-2cad-b730-5e85-c35b.ngrok-free.app/embed.js"></script>
+</body>
+</html> 

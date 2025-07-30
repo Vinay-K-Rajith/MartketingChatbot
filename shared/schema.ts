@@ -43,6 +43,16 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).pick({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type ChatSession = typeof chatSessions.$inferSelect;
-export type ChatMessage = typeof chatMessages.$inferSelect;
+// Extend ChatMessage type to support menu options in metadata
+export type ChatMessage = typeof chatMessages.$inferSelect & {
+  options?: ChatMenuOption[]; // Menu options, if any (from metadata)
+};
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+
+// Menu option type for chat messages
+export type ChatMenuOption = {
+  label: string;
+  next?: string;
+  query?: string;
+};

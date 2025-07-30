@@ -21,10 +21,18 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, "client/index.html"),
-        widget: path.resolve(__dirname, "client/widget.html"),
+        main: path.resolve(__dirname, 'client/index.html'),
+        widget: path.resolve(__dirname, 'client/widget.html'),
+        embed: path.resolve(__dirname, 'client/embed.html'),
+      },
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+        }
       }
     },
+    assetsDir: 'assets',
+    copyPublicDir: true,
   },
   server: {
     fs: {

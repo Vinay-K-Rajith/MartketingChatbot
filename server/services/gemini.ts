@@ -1,30 +1,46 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getSchoolContext } from "./school-context";
+import { MongoClient } from "mongodb";
+
 
 const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY || "AIzaSyDiS_-3NEG95Aj3Fr4Vv_hm0EY-rr3IJ00"
+  process.env.GEMINI_API_KEY || "AIzaSyDeeabQImj4RvQkb1OL82P46pIKW6Q7Bg0"
 );
-
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// Helper to fetch company context from MKB collection
+async function fetchCompanyContextFromMKB() {
+  const mongoUrl = process.env.MONGO_URL;
+  const dbName = 'test';
+  const mkbCollectionName = 'MKB';
+  const client = new MongoClient(mongoUrl!);
+  await client.connect();
+  const col = client.db(dbName).collection(mkbCollectionName);
+  const doc = await col.findOne({});
+  await client.close();
+  if (!doc) return {};
+  const { _id, ...fields } = doc;
+  return fields;
+}
 
 export async function generateResponse(userMessage: string, sessionId?: string): Promise<string> {
   try {
-    const schoolContext = getSchoolContext();
-    
-    const systemPrompt = `You are an AI assistant for St. Xavier's School, Bathinda. You help students and parents with enquiries about the school.
+    const companyContext = await fetchCompanyContextFromMKB();
+
+    const systemPrompt = `You are a professional marketing AI assistant for Entab Infotech Pvt Ltd, a leading Indian software development company specializing in school management solutions. Your primary goal is to generate leads and promote Entab's products and services.
 
 IMPORTANT GUIDELINES:
-- Always be helpful, professional, and friendly
-- Provide accurate information based on the school context provided
+- Always be professional, knowledgeable, and solution-oriented
+- Focus on lead generation and converting inquiries into business opportunities
+- Highlight Entab's expertise in school management solutions (ERP, mobile apps, digital learning tools)
 - Use proper formatting with emojis and bullet points for better readability
-- If you don't have specific information, direct users to contact the school
-- Always maintain the school's professional image
-- Be concise but comprehensive in your responses
+- If you don't have specific information, offer to connect them with the sales team
+- Always maintain Entab's professional brand image
+- Be clear and concise but compelling in your responses
 
-SCHOOL CONTEXT:
-${JSON.stringify(schoolContext, null, 2)}
+COMPANY CONTEXT:
+${JSON.stringify(companyContext, null, 2)}
 
-Please respond to the user's query in a helpful and informative way. Use the school context to provide accurate information.`;
+Please respond to the user's query in a professional, marketing-focused way that generates leads and promotes Entab's solutions.`;
 
     const result = await model.generateContent([
       { text: systemPrompt },
@@ -35,6 +51,6 @@ Please respond to the user's query in a helpful and informative way. Use the sch
     return response.text();
   } catch (error) {
     console.error("Error generating AI response:", error);
-    return "I apologize, but I'm having trouble processing your request right now. Please try again later or contact the school directly at contactsaintxaviersbathinda@gmail.com for immediate assistance.";
+    return "I apologize, but I'm having trouble processing your request right now. Please try again later or contact our sales team directly for immediate assistance.";
   }
 }

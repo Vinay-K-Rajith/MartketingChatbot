@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Chat Widget Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .demo-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            margin: 15px 0;
+        }
+        .button {
+            background: #2563eb;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        .button:hover {
+            background: #1d4ed8;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .feature {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .feature h3 {
+            color: #2563eb;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏫 St. Xavier's School Chat Assistant</h1>
+        
+        <div class="demo-section">
+            <h2>Widget Demo</h2>
+            <p>This page demonstrates the embeddable chat widget. Look for the blue chat button in the bottom-right corner!</p>
+            <p>The widget is currently embedded on this page and will work with any website.</p>
+        </div>
+
+        <div class="demo-section">
+            <h2>How to Embed</h2>
+            <p>To embed this widget on your website, simply add this to your HTML:</p>
+            <div class="code-block">
+&lt;div id="school-chat-widget"&gt;&lt;/div&gt;
+&lt;script src="https://your-ngrok-url.ngrok.io/assets/embed.js"&gt;&lt;/script&gt;
+            </div>
+            <p><strong>Note:</strong> Replace <code>your-ngrok-url.ngrok.io</code> with your actual ngrok URL.</p>
+        </div>
+
+        <div class="demo-section">
+            <h2>JavaScript API</h2>
+            <p>You can also control the widget programmatically:</p>
+            <div class="code-block">
+// Open the chat widget
+SchoolChatWidget.open();
+
+// Close the chat widget
+SchoolChatWidget.close();
+            </div>
+            <button class="button" onclick="SchoolChatWidget.open()">Open Chat</button>
+            <button class="button" onclick="SchoolChatWidget.close()">Close Chat</button>
+        </div>
+
+        <div class="features">
+            <div class="feature">
+                <h3>🎯 Easy Integration</h3>
+                <p>Just one line of code to add the widget to any website. No additional styling required.</p>
+            </div>
+            <div class="feature">
+                <h3>🔒 Isolated Styling</h3>
+                <p>The widget uses isolated CSS to prevent conflicts with your existing website styles.</p>
+            </div>
+            <div class="feature">
+                <h3>📱 Responsive Design</h3>
+                <p>Works perfectly on desktop, tablet, and mobile devices with adaptive layouts.</p>
+            </div>
+            <div class="feature">
+                <h3>⚡ Fast Loading</h3>
+                <p>Lightweight and optimized for quick loading without affecting your website performance.</p>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>Features</h2>
+            <ul>
+                <li>✅ Admissions information and eligibility</li>
+                <li>✅ Fee structure and payment methods</li>
+                <li>✅ Document requirements</li>
+                <li>✅ School policies and rules</li>
+                <li>✅ Real-time chat interface</li>
+                <li>✅ Quick action buttons</li>
+                <li>✅ Mobile responsive design</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Embed the widget -->
+    <div id="school-chat-widget"></div>
+    <script src="/assets/embed-CBXtQtvR.js"></script>
+</body>
+</html> 

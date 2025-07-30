@@ -1,4 +1,5 @@
 import { users, chatSessions, chatMessages, type User, type InsertUser, type ChatSession, type ChatMessage, type InsertChatSession, type InsertChatMessage } from "@shared/schema";
+import { MongoClient } from "mongodb";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -9,70 +10,92 @@ export interface IStorage {
   getChatMessages(sessionId: string): Promise<ChatMessage[]>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private chatSessions: Map<string, ChatSession>;
-  private chatMessages: Map<string, ChatMessage[]>;
-  private currentUserId: number;
-  private currentMessageId: number;
+const mongoUrl = process.env.MONGO_URL || "mongodb+srv://vaishakhp11:PiPa7LUEZ5ufQo8z@cluster0.toscmfj.mongodb.net/";
+const dbName = "test";
+const collectionName = "MChat_History";
 
-  constructor() {
-    this.users = new Map();
-    this.chatSessions = new Map();
-    this.chatMessages = new Map();
-    this.currentUserId = 1;
-    this.currentMessageId = 1;
+let mongoClient: MongoClient | null = null;
+async function getMongoCollection() {
+  if (!mongoUrl) throw new Error("MONGO_URL environment variable is not set. Chat history will not be saved.");
+  if (!mongoClient) {
+    mongoClient = new MongoClient(mongoUrl);
+    await mongoClient.connect();
   }
+  return mongoClient.db(dbName).collection(collectionName);
+}
 
-  async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
-  }
+export class MongoStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> { return undefined; }
+  async getUserByUsername(username: string): Promise<User | undefined> { return undefined; }
+  async createUser(user: InsertUser): Promise<User> { throw new Error('Not implemented'); }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.currentUserId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
-  }
-
-  async createChatSession(insertSession: InsertChatSession): Promise<ChatSession> {
-    const session: ChatSession = {
+  async createChatSession(session: InsertChatSession): Promise<ChatSession> {
+    if (!mongoUrl) {
+      console.warn("[MongoStorage] MONGO_URL not set. Skipping createChatSession.");
+      return {
+        id: Date.now(),
+        sessionId: session.sessionId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        type: "session"
+      } as ChatSession;
+    }
+    const col = await getMongoCollection();
+    const now = new Date();
+    const doc = {
       id: Date.now(),
-      sessionId: insertSession.sessionId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      sessionId: session.sessionId,
+      createdAt: now,
+      updatedAt: now,
+      type: "session",
+      timestamp: now // Always set timestamp for session
     };
-    this.chatSessions.set(session.sessionId, session);
-    this.chatMessages.set(session.sessionId, []);
-    return session;
+    await col.insertOne(doc);
+    return doc as ChatSession;
   }
 
-  async createChatMessage(insertMessage: InsertChatMessage): Promise<ChatMessage> {
-    const message: ChatMessage = {
-      id: this.currentMessageId++,
-      sessionId: insertMessage.sessionId,
-      content: insertMessage.content,
-      isUser: insertMessage.isUser,
+  async createChatMessage(message: InsertChatMessage): Promise<ChatMessage> {
+    if (!mongoUrl) {
+      console.warn("[MongoStorage] MONGO_URL not set. Skipping createChatMessage.");
+      return {
+        id: Date.now(),
+        sessionId: message.sessionId,
+        content: message.content,
+        isUser: message.isUser,
+        timestamp: new Date(),
+        metadata: message.metadata ?? null,
+      } as ChatMessage;
+    }
+    const col = await getMongoCollection();
+    const doc = {
+      id: Date.now(),
+      sessionId: message.sessionId,
+      content: message.content,
+      isUser: message.isUser,
       timestamp: new Date(),
-      metadata: insertMessage.metadata || null,
+      type: "message",
+      metadata: null
     };
-
-    const sessionMessages = this.chatMessages.get(insertMessage.sessionId) || [];
-    sessionMessages.push(message);
-    this.chatMessages.set(insertMessage.sessionId, sessionMessages);
-
-    return message;
+    await col.insertOne(doc);
+    return doc as ChatMessage;
   }
 
   async getChatMessages(sessionId: string): Promise<ChatMessage[]> {
-    return this.chatMessages.get(sessionId) || [];
+    if (!mongoUrl) {
+      console.warn("[MongoStorage] MONGO_URL not set. Returning empty chat history.");
+      return [];
+    }
+    const col = await getMongoCollection();
+    const docs = await col.find({ sessionId, type: "message" }).sort({ timestamp: 1 }).toArray();
+    return docs.map(doc => ({
+      id: doc.id ?? (doc._id ? doc._id.toString() : undefined),
+      sessionId: doc.sessionId,
+      content: doc.content,
+      isUser: doc.isUser,
+      timestamp: doc.timestamp,
+      metadata: doc.metadata ?? null,
+    }));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new MongoStorage();
