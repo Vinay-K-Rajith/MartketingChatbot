@@ -66,9 +66,21 @@ async function logChatMessage({ sessionId, content, isUser, nodeKey, type = "men
       body: JSON.stringify({ sessionId, content, isUser, nodeKey, type }),
     });
   } catch (err) {
-    // Optionally handle error
+    // Optionally handle error 
     console.error("Failed to log chat message", err);
   }
+}
+
+// Helper to detect if device is phone (mobile)
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 600);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return isMobile;
 }
 
 export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
@@ -101,6 +113,9 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
 
   // Add state for image modal
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+
+  // Detect if mobile
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (lastMessageRef.current) {
@@ -313,6 +328,26 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
 
   if (!isOpen) return null;
 
+  // --- Responsive style helpers for mobile ---
+  // For ScrollArea and chat area, max height for mobile (under 640px) should be device height minus input, no header on phone
+  // We'll use a style object for ScrollArea wrapper and for hiding header
+
+  // Get window height for maxHeight (for mobile)
+  const [windowHeight, setWindowHeight] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const update = () => setWindowHeight(window.innerHeight);
+      update();
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+  }, []);
+
+  // Height for chat area (mobile): minus input (about 64px), minus FAB (if visible, about 60-80px)
+  const chatAreaMaxHeightMobile = windowHeight
+    ? windowHeight - 64 // input
+    : undefined;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-end"
@@ -325,29 +360,67 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
         </div>
       )}
       <div
-        className="w-full md:w-[520px] max-w-[calc(100vw-1rem)] h-[calc(92vh-47px)] md:h-[46.075rem] bg-white rounded-3xl shadow-2xl border border-gray-200 flex flex-col animate-slide-up overflow-hidden m-2 md:m-4 relative"
+        className={
+          "w-full md:w-[520px] max-w-[calc(100vw-0.5rem)] sm:max-w-[calc(100vw-1rem)] h-[calc(100vh-1rem)] sm:h-[calc(92vh-47px)] md:h-[46.075rem] bg-white rounded-xl sm:rounded-3xl shadow-2xl border border-gray-200 flex flex-col animate-slide-up overflow-hidden m-1 sm:m-2 md:m-4 relative"
+        }
         onClick={e => e.stopPropagation()}
+        style={isMobile ? { borderRadius: 0, margin: 0, border: "none" } : undefined}
       >
         {/* Header with Back, Logo, and Close buttons */}
-        <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-blue-100 rounded-t-3xl relative">
+        <div
+          className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 bg-white border-b border-blue-100 rounded-t-xl sm:rounded-t-3xl relative"
+          style={isMobile ? { display: "none" } : undefined}
+        >
           <button
-            className="flex items-center gap-1 text-school-blue font-semibold text-base hover:underline focus:outline-none"
+            className="flex items-center gap-1 text-school-blue font-semibold text-sm sm:text-base hover:underline focus:outline-none"
             onClick={handleBackToMenu}
             aria-label="Back to Menu"
           >
-            <ArrowLeft className="w-5 h-5" />
-            Back
+            <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Back</span>
           </button>
           <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-            <img src="https://images.yourstory.com/cs/images/company_products/entab-infotech-pvt-ltd_1615368324541.jpg" alt="Entab Logo" className="h-8 md:h-10 object-contain" style={{ maxWidth: '120px' }} />
+            <img
+              src="https://images.yourstory.com/cs/images/company_products/entab-infotech-pvt-ltd_1615368324541.jpg"
+              alt="Entab Logo"
+              className="h-6 sm:h-8 md:h-10 object-contain"
+              style={{ maxWidth: '80px', ...(typeof window !== "undefined" && window.innerWidth >= 640 ? { maxWidth: '120px' } : {}) }}
+            />
           </div>
         </div>
-        {/* Remove the QuickActions bar */}
 
         <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 flex flex-col">
-            <ScrollArea className="flex-1 px-4 py-4 bg-white" ref={scrollAreaRef}>
-              <div className="space-y-4">
+            <ScrollArea
+              className={`flex-1 px-2 sm:px-4 py-2 sm:py-4 bg-white`}
+              ref={scrollAreaRef}
+              style={
+                isMobile
+                  ? {
+                      maxWidth: "100vw",
+                      width: "100vw",
+                      minWidth: "100vw",
+                      paddingLeft: 0,
+                      paddingRight: 0,
+                      maxHeight: chatAreaMaxHeightMobile ? `${chatAreaMaxHeightMobile}px` : undefined,
+                    }
+                  : undefined
+              }
+            >
+              <div
+                className="space-y-3 sm:space-y-4"
+                style={
+                  isMobile
+                    ? {
+                        maxWidth: "100vw",
+                        width: "100vw",
+                        minWidth: "100vw",
+                        marginLeft: 0,
+                        marginRight: 0,
+                      }
+                    : undefined
+                }
+              >
                 {/* Onboarding chat flow */}
                 {onboardingStep !== null && (
                   <div className="flex flex-col items-center w-full animate-fade-in">
@@ -368,15 +441,15 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                       className="w-full flex flex-col items-center mt-4"
                       autoComplete="off"
                     >
-                      <div className="w-full max-w-md bg-blue-50 border border-blue-100 rounded-2xl shadow-md p-5 flex flex-col gap-2">
-                        <label htmlFor="onboarding-input" className="text-school-blue font-semibold text-base mb-1">
+                      <div className="w-full max-w-md bg-blue-50 border border-blue-100 rounded-xl sm:rounded-2xl shadow-md p-3 sm:p-5 flex flex-col gap-2">
+                        <label htmlFor="onboarding-input" className="text-school-blue font-semibold text-sm sm:text-base mb-1">
                           {onboardingStep === 0 ? 'Your Name' : 'Phone Number'}
                         </label>
                         <div className="relative flex items-center">
                           {onboardingStep === 0 ? (
-                            <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-5 h-5" />
+                            <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-4 h-4 sm:w-5 sm:h-5" />
                           ) : (
-                            <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-5 h-5" />
+                            <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-4 h-4 sm:w-5 sm:h-5" />
                           )}
                           <Input
                             id="onboarding-input"
@@ -386,7 +459,7 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                             autoFocus
                             value={inputValue}
                             onChange={e => setInputValue(e.target.value)}
-                            className="pl-10 pr-4 py-3 text-base border-2 border-blue-200 rounded-xl focus:border-school-blue focus:ring-2 focus:ring-school-blue focus:ring-opacity-20 shadow-sm w-full"
+                            className="pl-10 pr-4 py-2 sm:py-3 text-sm sm:text-base border-2 border-blue-200 rounded-xl focus:border-school-blue focus:ring-2 focus:ring-school-blue focus:ring-opacity-20 shadow-sm w-full"
                             aria-label={onboardingStep === 0 ? 'Your Name' : 'Phone Number'}
                           />
                         </div>
@@ -395,11 +468,11 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                         )}
                         <Button
                           type="submit"
-                          className="mt-3 w-full bg-school-blue text-white flex items-center justify-center gap-2 text-base font-semibold rounded-xl shadow hover:bg-school-deep py-3"
+                          className="mt-2 sm:mt-3 w-full bg-school-blue text-white flex items-center justify-center gap-2 text-sm sm:text-base font-semibold rounded-xl shadow hover:bg-school-deep py-2 sm:py-3"
                           size="lg"
                           disabled={submitting}
                         >
-                          <Send className="w-5 h-5" />
+                          <Send className="w-4 h-4 sm:w-5 sm:h-5" />
                           {onboardingStep === 0 ? 'Continue' : submitting ? 'Registering...' : 'Register'}
                         </Button>
                       </div>
@@ -424,6 +497,7 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                             key={msg.id}
                             ref={isLast ? lastMessageRef : undefined}
                             className="bg-white border border-blue-100 rounded-xl p-4 shadow-sm flex flex-col items-center mb-2"
+                            style={isMobile ? { maxWidth: "100vw", width: "100vw", minWidth: "100vw" } : undefined}
                           >
                             <MessageBubble
                               content={msg.content}
@@ -439,12 +513,50 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                             />
                           </div>
                         );
+                      } else if (msg.options && Array.isArray(msg.options) && msg.options.length > 0) {
+                        // Menu-driven message with options: keep layout as original (not single line)
+                        return (
+                          <div
+                            key={msg.id}
+                            ref={isLast ? lastMessageRef : undefined}
+                            className="bg-white border border-blue-100 rounded-xl p-4 shadow-sm mb-2"
+                            style={isMobile ? { maxWidth: "100vw", width: "100vw", minWidth: "100vw" } : undefined}
+                          >
+                            <MessageBubble
+                              content={msg.content}
+                              isUser={msg.isUser}
+                              timestamp={msg.timestamp ? new Date(msg.timestamp) : new Date()}
+                            />
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                              {msg.options.map((opt: any, i: number) => (
+                                <Button
+                                  key={i}
+                                  className="w-full bg-gray-50 hover:bg-white text-[#153A5B] hover:text-[#153A5B] border border-gray-100 rounded-lg shadow-sm text-xs font-semibold py-2 flex items-center justify-center"
+                                  style={{ fontSize: "0.81rem", color: "#153A5B" }}
+                                  onClick={() => handleMenuOption(opt)}
+                                >
+                                  {opt.icon && moduleIcons[opt.icon] ? (
+                                    <span className="mr-2">
+                                      {moduleIcons[opt.icon] && (
+                                        <span>
+                                          {moduleIcons[opt.icon]({ className: "w-5 h-5" })}
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : null}
+                                  {opt.label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        );
                       } else {
                         return (
                           <div
                             key={msg.id}
                             ref={isLast ? lastMessageRef : undefined}
                             className={msg._source === 'remote' ? "bg-white border border-blue-100 rounded-xl p-4 shadow-sm mb-2" : undefined}
+                            style={isMobile && msg._source === 'remote' ? { maxWidth: "100vw", width: "100vw", minWidth: "100vw" } : undefined}
                           >
                             <MessageBubble
                               content={msg.content}
@@ -490,6 +602,7 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                 disabled={isLoading}
                 onFocus={() => setInputFocused(true)}
                 onBlur={() => setInputFocused(false)}
+                style={isMobile ? { maxWidth: "100vw", width: "100vw", minWidth: "100vw" } : undefined}
               />
               <Button
                 onClick={handleSendMessage}

@@ -461,7 +461,7 @@ const EntabDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Messages"
-          value="24,567"
+          value="567"
           change="12.5%"
           changeType="up"
           icon={
@@ -472,8 +472,8 @@ const EntabDashboard = () => {
         />
         <StatCard
           title="New Registrations"
-          value="1,234"
-          change="8.2%"
+          value="34"
+          change="8%"
           changeType="up"
           icon={
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
@@ -483,8 +483,8 @@ const EntabDashboard = () => {
         />
         <StatCard
           title="Active Users"
-          value="5,678"
-          change="3.1%"
+          value="8"
+          change="3%"
           changeType="down"
           icon={
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">

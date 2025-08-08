@@ -18,8 +18,8 @@ export const workflow: Record<string, WorkflowNode> = {
   mainMenu: {
     message: `**Why Choose Entab?**\n\n- 20+ years of expertise, 1,500+ schools served\n- Powerful, integrated ERP and mobile solutions\n- Real-time analytics, automation, and compliance\n\nHow can I help your school grow today? (Ask about features, book a demo, or request a call!)`,
     options: [
-      { label: 'School ERP (Enterprise Resource Planning)', next: 'schoolERP' },
-      { label: 'LMS (Learning Management System)', next: 'lms' },
+      { label: 'School ERP ', next: 'schoolERP' },
+      { label: 'LMS', next: 'lms' },
       { label: 'Digital Content Solutions', next: 'digitalContent' },
       { label: 'I want to explore all services', next: 'allProducts' },
     ],
