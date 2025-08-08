@@ -372,7 +372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       window.chatbotInjected = true;
       const config = {
         chatbotUrl: 'http://127.0.0.1:5001/',
-        chatbotTitle: 'Entab',
+        chatbotTitle: 'Cami',
         buttonIcon: '💬',
         position: 'bottom-right'
       };
