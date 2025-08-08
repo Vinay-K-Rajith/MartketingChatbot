@@ -371,8 +371,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (window.chatbotInjected) return;
       window.chatbotInjected = true;
       const config = {
-        chatbotUrl: 'http://127.0.0.1:5001/',
-        chatbotTitle: 'Cami',
+        chatbotUrl: 'https://marketingchat.entab.net/',
+        chatbotTitle: 'Campus Buddy',
         buttonIcon: '💬',
         position: 'bottom-right'
       };

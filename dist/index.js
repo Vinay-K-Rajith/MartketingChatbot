@@ -507,8 +507,8 @@ async function registerRoutes(app2) {
       if (window.chatbotInjected) return;
       window.chatbotInjected = true;
       const config = {
-        chatbotUrl: 'http://127.0.0.1:5001/',
-        chatbotTitle: 'Entab',
+        chatbotUrl: 'https://marketingchat.entab.net/',
+        chatbotTitle: 'Campus Buddy',
         buttonIcon: '\u{1F4AC}',
         position: 'bottom-right'
       };
@@ -953,7 +953,6 @@ app.use((req, res, next) => {
 });
 app.use(express2.json());
 app.use(express2.urlencoded({ extended: false }));
-app.use(express2.static("dist"));
 app.use((req, res, next) => {
   const start = Date.now();
   const path4 = req.path;
