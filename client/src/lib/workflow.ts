@@ -16,7 +16,7 @@ export type WorkflowNode = {
 
 export const workflow: Record<string, WorkflowNode> = {
   mainMenu: {
-    message: `**Why Choose Entab?**\n\n- 20+ years of expertise, 1,500+ schools served\n- Powerful, integrated ERP and mobile solutions\n- Real-time analytics, automation, and compliance\n\nHow can I help your school grow today? (Ask about features, book a demo, or request a call!)`,
+    message: `**Why Choose Entab?**\n\n- 25+ years of expertise, 1,500+ schools served\n- Powerful, integrated ERP and mobile solutions\n- Real-time analytics, automation, and compliance\n\nHow can I help your school grow today? (Ask about features, book a demo, or request a call!)`,
     options: [
       { label: 'School ERP ', next: 'schoolERP' },
       { label: 'LMS', next: 'lms' },

@@ -25,9 +25,31 @@
       max-width: 500px;
       text-align: center;
     }
+    .top-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 125px;
+      background: #2196f3;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(33,150,243,0.12);
+    }
+    /* Push content down so it's not hidden under the bar */
+    body > .info {
+      margin-top: 140px;
+    }
   </style>
 </head>
 <body>
+  <div class="top-bar">
+    Top Bar (125px height, full width)
+  </div>
   <div class="info">
     <h2>Entab Chatbot Widget Demo</h2>
     <p>This page demonstrates how to embed the Entab chatbot widget using a single &lt;script&gt; tag.</p>

@@ -377,81 +377,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         position: 'bottom-right'
       };
       const styles = \`
-        .chatbot-container { position: fixed; bottom: 32px; right: 32px; z-index: 999999; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .chatbot-button { width: 70px; height: 70px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 50%; cursor: pointer; box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 30px; position: relative; }
-        .chatbot-container { position: fixed; bottom: 32px; right: 32px; z-index: 999999; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .chatbot-button { width: 70px; height: 70px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 50%; cursor: pointer; box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 30px; }
-        /* .chatbot-button .ai-badge { ... } -- removed AI badge from button */
-        .chatbot-button:hover { transform: scale(1.1); box-shadow: 0 6px 30px rgba(102, 126, 234, 0.6); }
-        .chatbot-widget { position: absolute; bottom: 0px; right: 0; width: 480px; height: 720px; background: white; border-radius: 24px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.22); display: none; flex-direction: column; overflow: hidden; animation: slideUp 0.3s ease; }
-        .chatbot-widget.active { display: flex; }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
-        .chatbot-header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 1.25rem 1.5rem;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          position: relative;
-        }
-        .chatbot-title {
-          font-weight: bold;
-          font-size: 1.25rem;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        .chatbot-header .chatbot-logo {
-          width: 32px;
-          height: 32px;
-          margin-right: 0.5rem;
-          border-radius: 50%;
-          background: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
-        }
-        .chatbot-header .chatbot-logo img {
-          width: 28px;
-          height: 28px;
-        }
-        .chatbot-header .ai-badge {
-          background: white;
-          border: 1px solid #ccc;
-          border-radius: 8px;
-          color: #333;
-          font-size: 12px;
-          font-weight: bold;
-          padding: 2px 7px;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-          letter-spacing: 0.5px;
-          margin-left: 0.5rem;
-        }
-        .chatbot-close {
-          background: none;
-          border: none;
-          color: white;
-          font-size: 2rem;
-          cursor: pointer;
-          width: 38px;
-          height: 38px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: background 0.3s ease;
-        }
-        .chatbot-close:hover {
-          background: rgba(255, 255, 255, 0.2);
-        }
+        /* --- Chatbot Widget CSS: Max Fit Iframe in Container, No Gray Areas, No Duplicates, No Shadow Artifacts --- */
+        .chatbot-container,
+        .chatbot-widget,
         .chatbot-iframe {
-          flex: 1;
-          border: none;
-          width: 100%;
+          background: #fff !important;
+          border: none !important;
+          box-shadow: none !important;
         }
-        /* Always keep the chatbot icon on the right, even on phones */
+        .chatbot-container {
+          position: fixed;
+          z-index: 999999;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          bottom: 32px;
+          right: 32px;
+        }
         .chatbot-container.bottom-right {
           bottom: 32px;
           right: 32px;
@@ -487,7 +427,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
           right: auto;
           left: 0;
         }
-
+        .chatbot-button {
+          width: 70px;
+          height: 70px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border: none;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 30px;
+          position: fixed;
+          bottom: 32px;
+          right: 32px;
+          z-index: 1000000;
+          transition: all 0.3s ease;
+        }
+        .chatbot-button:hover {
+          transform: scale(1.1);
+        }
+        .chatbot-button.pulse {
+          animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+          0% { box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4); }
+          50% { box-shadow: 0 4px 24px rgba(102, 126, 234, 0.8); }
+          100% { box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4); }
+        }
+        .chatbot-widget {
+          position: absolute;
+          bottom: 0px;
+          right: 0;
+          width: 410px;
+          height: 575px;
+          background: #fff !important;
+          border-radius: 24px;
+          display: none;
+          flex-direction: column;
+          overflow: hidden;
+          animation: slideUp 0.3s ease;
+          min-width: 320px;
+          min-height: 400px;
+          max-width: 98vw;
+          max-height: 98vh;
+        }
+        .chatbot-widget.active {
+          display: flex;
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .chatbot-header {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 1rem 1.2rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          position: relative;
+        }
+        .chatbot-title {
+          font-weight: bold;
+          font-size: 1.05rem;
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+        }
+        .chatbot-header .chatbot-logo {
+          width: 22px;
+          height: 22px;
+          margin-right: 0.3rem;
+          border-radius: 50%;
+          background: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+        }
+        .chatbot-header .chatbot-logo img {
+          width: 18px;
+          height: 18px;
+        }
+        .chatbot-header .ai-badge {
+          background: white;
+          border: 1px solid #ccc;
+          border-radius: 7px;
+          color: #333;
+          font-size: 10px;
+          font-weight: bold;
+          padding: 2px 6px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          letter-spacing: 0.5px;
+          margin-left: 0.3rem;
+        }
+        .chatbot-close {
+          background: none;
+          border: none;
+          color: white;
+          font-size: 1.2rem;
+          cursor: pointer;
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: background 0.3s ease;
+        }
+        .chatbot-close:hover {
+          background: rgba(255, 255, 255, 0.15);
+        }
+        .chatbot-iframe {
+          flex: 1;
+          border: none !important;
+          width: 100%;
+          background: #fff !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          min-height: 0;
+          min-width: 0;
+          max-width: 100vw;
+          max-height: 100vh;
+          display: block;
+        }
         /* Responsive adjustments for tablets and laptops */
         @media (max-width: 1200px) {
           .chatbot-widget {
@@ -553,68 +618,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             left: auto !important;
             position: fixed !important;
             z-index: 1000000;
-            box-shadow: 0 2px 12px rgba(102, 126, 234, 0.4);
           }
-        }
-        /* Make sure the button is always in the bottom right on all screens */
-        .chatbot-button {
-          width: 70px;
-          height: 70px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border: none;
-          border-radius: 50%;
-          cursor: pointer;
-          box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4);
-          transition: all 0.3s ease;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-size: 30px;
-          position: fixed;
-          bottom: 32px;
-          right: 32px;
-          z-index: 1000000;
-        }
-        .chatbot-button:hover {
-          transform: scale(1.1);
-          box-shadow: 0 6px 30px rgba(102, 126, 234, 0.6);
-        }
-        .chatbot-widget {
-          position: absolute;
-          bottom: 0px;
-          right: 0;
-          width: 480px;
-          height: 720px;
-          background: white;
-          border-radius: 24px;
-          box-shadow: 0 12px 48px rgba(0, 0, 0, 0.22);
-          display: none;
-          flex-direction: column;
-          overflow: hidden;
-          animation: slideUp 0.3s ease;
-          min-width: 320px;
-          min-height: 400px;
-          max-width: 98vw;
-          max-height: 98vh;
-        }
-        .chatbot-widget.active {
-          display: flex;
-        }
-        @keyframes pulse {
-          0% { box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4); }
-          50% { box-shadow: 0 4px 24px rgba(102, 126, 234, 0.8); }
-          100% { box-shadow: 0 4px 24px rgba(102, 126, 234, 0.4); }
-        }
-        .chatbot-button.pulse {
-          animation: pulse 2s infinite;
         }
       \`;
       const styleSheet = document.createElement('style');
       styleSheet.textContent = styles;
       document.head.appendChild(styleSheet);
       // Remove AI badge from button, add it to header
-      const chatbotHTML = '<div class="chatbot-container ' + config.position + '"><button class="chatbot-button" id="chatbotToggle">' + config.buttonIcon + '</button><div class="chatbot-widget" id="chatbotWidget"><div class="chatbot-header"><div class="chatbot-title">' + config.chatbotTitle + '<span class="ai-badge">AI</span></div><button class="chatbot-close" id="chatbotClose">×</button></div><iframe class="chatbot-iframe" src="' + config.chatbotUrl + '" title="AI Chatbot"></iframe></div></div>';
+      const chatbotHTML = '<div class="chatbot-container ' + config.position + '"><button class="chatbot-button" id="chatbotToggle">' + config.buttonIcon + '</button><div class="chatbot-widget" id="chatbotWidget"><div class="chatbot-header"><div class="chatbot-title">' + config.chatbotTitle + '<span class="ai-badge">AI</span></div><button class="chatbot-close" id="chatbotClose">×</button></div><iframe class="chatbot-iframe" src="' + config.chatbotUrl + '" title="AI Chatbot" seamless></iframe></div></div>';
       function initializeChatbot() {
         const container = document.createElement('div');
         container.innerHTML = chatbotHTML;

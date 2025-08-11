@@ -594,7 +594,7 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
             <div className="flex items-center space-x-2">
               <Input
                 type="text"
-                placeholder="Ask about ERP features, book a demo, or request a call..."
+                placeholder="Ask about ERP features or book a demo..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
