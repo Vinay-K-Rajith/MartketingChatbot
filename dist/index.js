@@ -509,11 +509,12 @@ async function registerRoutes(app2) {
       const config = {
         chatbotUrl: 'https://marketingchat.entab.net/',
         chatbotTitle: 'Campus Buddy',
-        buttonIcon: '\u{1F4AC}',
+        // Use an <img> for the button icon, make it circular, max fit, and add a black border
+        buttonIcon: '<img src="https://media.istockphoto.com/id/2074604864/vector/chatbot-smiley-robot-face-icon-with-microphone-and-speech-bubble-vector-thin-line.jpg?s=612x612&w=0&k=20&c=MrqadmP-Eq3o7bXHN4WPbv1v8jrwOyS72O6fNcuNqZw=" alt="Chatbot" class="chatbot-btn-icon" />',
         position: 'bottom-right'
       };
       const styles = \`
-        /* --- Chatbot Widget CSS: Max Fit Iframe in Container, No Gray Areas, No Duplicates, No Shadow Artifacts --- */
+        /* --- Chatbot Widget CSS: Always 70% of Viewport Height --- */
         .chatbot-container,
         .chatbot-widget,
         .chatbot-iframe {
@@ -580,6 +581,21 @@ async function registerRoutes(app2) {
           right: 32px;
           z-index: 1000000;
           transition: all 0.3s ease;
+          padding: 0;
+          overflow: hidden;
+        }
+        .chatbot-btn-icon {
+          width: 90%;
+          height: 90%;
+          max-width: 60px;
+          max-height: 60px;
+          min-width: 0;
+          min-height: 0;
+          border-radius: 50%;
+          border: 2px solid #000;
+          object-fit: cover;
+          background: #fff;
+          display: block;
         }
         .chatbot-button:hover {
           transform: scale(1.1);
@@ -597,7 +613,7 @@ async function registerRoutes(app2) {
           bottom: 0px;
           right: 0;
           width: 410px;
-          height: 575px;
+          height: 70vh;
           background: #fff !important;
           border-radius: 24px;
           display: none;
@@ -605,9 +621,9 @@ async function registerRoutes(app2) {
           overflow: hidden;
           animation: slideUp 0.3s ease;
           min-width: 320px;
-          min-height: 400px;
+          min-height: 280px;
           max-width: 98vw;
-          max-height: 98vh;
+          max-height: 70vh;
         }
         .chatbot-widget.active {
           display: flex;
@@ -686,16 +702,18 @@ async function registerRoutes(app2) {
           min-height: 0;
           min-width: 0;
           max-width: 100vw;
-          max-height: 100vh;
+          max-height: 70vh;
+          height: 100%;
           display: block;
         }
         /* Responsive adjustments for tablets and laptops */
         @media (max-width: 1200px) {
           .chatbot-widget {
             width: 90vw;
-            height: 80vh;
+            height: 70vh;
             right: 2vw;
             left: auto;
+            max-height: 70vh;
           }
           .chatbot-container.bottom-left .chatbot-widget,
           .chatbot-container.top-left .chatbot-widget {
@@ -706,9 +724,10 @@ async function registerRoutes(app2) {
         @media (max-width: 900px) {
           .chatbot-widget {
             width: 98vw;
-            height: 80vh;
+            height: 70vh;
             right: 1vw;
             left: auto;
+            max-height: 70vh;
           }
           .chatbot-container.bottom-left .chatbot-widget,
           .chatbot-container.top-left .chatbot-widget {
@@ -716,18 +735,18 @@ async function registerRoutes(app2) {
             right: auto;
           }
         }
-        /* Mobile: full width, full height, icon always bottom right */
+        /* Mobile: full width, 70% height, icon always bottom right */
         @media (max-width: 600px) {
           .chatbot-widget {
             width: 100vw;
-            height: 100vh;
+            height: 70vh;
             right: 0;
             left: 0;
             border-radius: 0;
             min-width: 0;
             min-height: 0;
             max-width: 100vw;
-            max-height: 100vh;
+            max-height: 70vh;
           }
           .chatbot-container {
             bottom: 0 !important;
