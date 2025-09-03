@@ -42,14 +42,55 @@ const EntabDashboard = () => {
   }, []);
   // Dashboard state and logic
   const [messagesPeriod, setMessagesPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [registrationsPeriod, setRegistrationsPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'monthly'>('daily');
+  const [registrationsPeriod, setRegistrationsPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [filters, setFilters] = useState({
     fromDate: '',
     toDate: '',
     sortBy: 'Newest First',
     searchId: ''
   });
+  const [pageSize, setPageSize] = useState(15);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'knowledge' | 'workflow'>('history');
+
+  // Dashboard stats state
+  const [dashboardStats, setDashboardStats] = useState({
+    totalMessages: 0,
+    totalMessagesChange: '0%',
+    totalMessagesChangeType: 'up' as 'up' | 'down',
+    registrations: 0,
+    registrationsChange: '0%',
+    registrationsChangeType: 'up' as 'up' | 'down',
+    activeUsers: 0,
+    activeUsersChange: '0%',
+    activeUsersChangeType: 'up' as 'up' | 'down',
+    conversionRate: '0.0%',
+    conversionRateChange: '0%',
+    conversionRateChangeType: 'up' as 'up' | 'down',
+    totalSessions: 0,
+    totalSessionsChange: '0%',
+    totalSessionsChangeType: 'up' as 'up' | 'down'
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // Chart data state
+  const [messagesData, setMessagesData] = useState({
+    daily: [],
+    weekly: [],
+    monthly: []
+  });
+  const [registrationsData, setRegistrationsData] = useState({
+    daily: [],
+    weekly: [],
+    monthly: []
+  });
+  const [chartDataLoading, setChartDataLoading] = useState(true);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [hasPrevPage, setHasPrevPage] = useState(false);
 
   // --- Knowledge base state and logic (moved to bottom for separation) ---
   // Types for Knowledge Base
@@ -330,71 +371,12 @@ const EntabDashboard = () => {
     }
   };
   const [isApplying, setIsApplying] = useState(false);
+  const [isPaginating, setIsPaginating] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [showModal, setShowModal] = useState(false);
-
-  // Dashboard data
-  const messagesData = {
-    daily: [
-      { name: 'Mon', messages: 245 },
-      { name: 'Tue', messages: 312 },
-      { name: 'Wed', messages: 189 },
-      { name: 'Thu', messages: 456 },
-      { name: 'Fri', messages: 398 },
-      { name: 'Sat', messages: 178 },
-      { name: 'Sun', messages: 234 }
-    ],
-    weekly: [
-      { name: 'Week 1', messages: 1580 },
-      { name: 'Week 2', messages: 2145 },
-      { name: 'Week 3', messages: 1923 },
-      { name: 'Week 4', messages: 2567 }
-    ],
-    monthly: [
-      { name: 'Jan', messages: 8945 },
-      { name: 'Feb', messages: 7821 },
-      { name: 'Mar', messages: 9234 },
-      { name: 'Apr', messages: 8567 },
-      { name: 'May', messages: 9876 },
-      { name: 'Jun', messages: 8234 }
-    ]
-  };
-
-  const registrationsData = {
-    hourly: [
-      { name: '00:00', registrations: 12 },
-      { name: '06:00', registrations: 8 },
-      { name: '12:00', registrations: 45 },
-      { name: '18:00', registrations: 67 },
-      { name: '21:00', registrations: 34 }
-    ],
-    daily: [
-      { name: 'Mon', registrations: 89 },
-      { name: 'Tue', registrations: 123 },
-      { name: 'Wed', registrations: 67 },
-      { name: 'Thu', registrations: 145 },
-      { name: 'Fri', registrations: 98 },
-      { name: 'Sat', registrations: 76 },
-      { name: 'Sun', registrations: 54 }
-    ],
-    weekly: [
-      { name: 'Week 1', registrations: 456 },
-      { name: 'Week 2', registrations: 612 },
-      { name: 'Week 3', registrations: 534 },
-      { name: 'Week 4', registrations: 789 }
-    ],
-    monthly: [
-      { name: 'Jan', registrations: 2345 },
-      { name: 'Feb', registrations: 1987 },
-      { name: 'Mar', registrations: 2567 },
-      { name: 'Apr', registrations: 2123 },
-      { name: 'May', registrations: 2789 },
-      { name: 'Jun', registrations: 2456 }
-    ]
-  };
 
   // Removed demographicsData and deviceData
 
@@ -412,10 +394,13 @@ const EntabDashboard = () => {
         <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl text-white">
           {icon}
         </div>
-        <div className={`text-sm font-semibold px-3 py-1 rounded-full ${
-          changeType === 'up' ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100'
-        }`}>
-          {changeType === 'up' ? '↗' : '↘'} {change}
+        <div className="flex flex-col items-end">
+          <div className={`text-sm font-semibold px-3 py-1 rounded-full ${
+            changeType === 'up' ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100'
+          }`}>
+            {changeType === 'up' ? '↗' : '↘'} {change}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">vs last week</div>
         </div>
       </div>
       <h3 className="text-2xl font-bold text-slate-900 mb-1">{value}</h3>
@@ -461,9 +446,9 @@ const EntabDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Messages"
-          value="567"
-          change="12.5%"
-          changeType="up"
+          value={statsLoading ? '...' : dashboardStats.totalMessages.toString()}
+          change={dashboardStats.totalMessagesChange}
+          changeType={dashboardStats.totalMessagesChangeType}
           icon={
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clipRule="evenodd"/>
@@ -472,9 +457,9 @@ const EntabDashboard = () => {
         />
         <StatCard
           title="New Registrations"
-          value="34"
-          change="8%"
-          changeType="up"
+          value={statsLoading ? '...' : dashboardStats.registrations.toString()}
+          change={dashboardStats.registrationsChange}
+          changeType={dashboardStats.registrationsChangeType}
           icon={
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
               <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z"/>
@@ -482,10 +467,10 @@ const EntabDashboard = () => {
           }
         />
         <StatCard
-          title="Active Users"
-          value="8"
-          change="3%"
-          changeType="down"
+          title="Total Sessions"
+          value={statsLoading ? '...' : dashboardStats.totalSessions.toString()}
+          change={dashboardStats.totalSessionsChange}
+          changeType={dashboardStats.totalSessionsChangeType}
           icon={
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
               <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -494,9 +479,9 @@ const EntabDashboard = () => {
         />
         <StatCard
           title="Conversion Rate"
-          value="68.5%"
-          change="15.7%"
-          changeType="up"
+          value={statsLoading ? '...' : dashboardStats.conversionRate}
+          change={dashboardStats.conversionRateChange || '0%'}
+          changeType={dashboardStats.conversionRateChangeType || 'up'}
           icon={
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
@@ -513,68 +498,87 @@ const EntabDashboard = () => {
           setPeriod={setMessagesPeriod}
           periods={['daily', 'weekly', 'monthly']}
         >
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={messagesData[messagesPeriod as keyof typeof messagesData]}>
-              <defs>
-                <linearGradient id="messagesGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#667eea" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#667eea" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" stroke="#64748b" />
-              <YAxis stroke="#64748b" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e2e8f0', 
-                  borderRadius: '12px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                }} 
-              />
-              <Area 
-                type="monotone" 
-                dataKey="messages" 
-                stroke="#667eea" 
-                strokeWidth={3}
-                fill="url(#messagesGradient)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          {chartDataLoading ? (
+            <div className="flex items-center justify-center h-[300px]">
+              <div className="flex items-center space-x-2 text-gray-500">
+                <svg className="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Loading chart data...</span>
+              </div>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={messagesData[messagesPeriod as keyof typeof messagesData]}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="period" stroke="#64748b" />
+                <YAxis stroke="#64748b" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e2e8f0', 
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                  }} 
+                />
+                <Line 
+                  type="linear" 
+                  dataKey="count" 
+                  stroke="#667eea" 
+                  strokeWidth={3}
+                  dot={{ fill: '#667eea', strokeWidth: 2, r: 4 }}
+                  activeDot={{ r: 6, stroke: '#667eea', strokeWidth: 2, fill: '#fff' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
 
         <ChartCard
           title="Registration Trends"
           period={registrationsPeriod}
           setPeriod={setRegistrationsPeriod}
-          periods={['hourly', 'daily', 'weekly', 'monthly']}
+          periods={['daily', 'weekly', 'monthly']}
         >
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={registrationsData[registrationsPeriod as keyof typeof registrationsData]}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" stroke="#64748b" />
-              <YAxis stroke="#64748b" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e2e8f0', 
-                  borderRadius: '12px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                }} 
-              />
-              <Bar 
-                dataKey="registrations" 
-                fill="url(#barGradient)"
-                radius={[4, 4, 0, 0]}
-              />
-              <defs>
-                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#764ba2"/>
-                  <stop offset="100%" stopColor="#667eea"/>
-                </linearGradient>
-              </defs>
-            </BarChart>
-          </ResponsiveContainer>
+          {chartDataLoading ? (
+            <div className="flex items-center justify-center h-[300px]">
+              <div className="flex items-center space-x-2 text-gray-500">
+                <svg className="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Loading chart data...</span>
+              </div>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={registrationsData[registrationsPeriod as keyof typeof registrationsData]}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="period" stroke="#64748b" />
+                <YAxis stroke="#64748b" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e2e8f0', 
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                  }} 
+                />
+                <Bar 
+                  dataKey="registrations" 
+                  fill="url(#barGradient)"
+                  radius={[4, 4, 0, 0]}
+                />
+                <defs>
+                  <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#764ba2"/>
+                    <stop offset="100%" stopColor="#667eea"/>
+                  </linearGradient>
+                </defs>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </ChartCard>
       </div>
 
@@ -591,6 +595,8 @@ const EntabDashboard = () => {
 
   const handleApplyFilters = () => {
     setIsApplying(true);
+    setCurrentPage(1); // Reset to first page when applying filters
+    fetchSessions(1); // Fetch first page with new filters
     setTimeout(() => {
       setIsApplying(false);
     }, 1000);
@@ -603,18 +609,150 @@ const EntabDashboard = () => {
       sortBy: 'Newest First',
       searchId: ''
     });
+    setCurrentPage(1); // Reset to first page
+    fetchSessions(1); // Fetch first page without filters
+  };
+
+  // Function to fetch sessions with filters and pagination
+  const fetchSessions = (page: number = 1) => {
+    setLoading(true);
+    
+    // Build query parameters
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: pageSize.toString(),
+      sortBy: filters.sortBy,
+      ...(filters.fromDate && { fromDate: filters.fromDate }),
+      ...(filters.toDate && { toDate: filters.toDate }),
+      ...(filters.searchId && { searchId: filters.searchId })
+    });
+
+    fetch(`/api/chat/sessions?${params}`)
+      .then(res => res.json())
+      .then(data => {
+        setSessions(data.sessions || []);
+        setCurrentPage(data.page || 1);
+        setTotalPages(data.totalPages || 1);
+        setTotalSessions(data.total || 0);
+        setHasNextPage(data.hasNextPage || false);
+        setHasPrevPage(data.hasPrevPage || false);
+        setLoading(false);
+      })
+      .catch(error => {
+        console.error('Error fetching sessions:', error);
+        setLoading(false);
+      });
+  };
+
+  // Function to fetch dashboard statistics
+  const fetchDashboardStats = async () => {
+    try {
+      setStatsLoading(true);
+      const response = await fetch('/api/dashboard/stats');
+      if (response.ok) {
+        const data = await response.json();
+        setDashboardStats(data);
+      } else {
+        console.error('Failed to fetch dashboard stats');
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  // Function to fetch chart data
+  const fetchChartData = async () => {
+    try {
+      setChartDataLoading(true);
+      
+      // Fetch messages data for different periods
+      const messagesResponse = await fetch('/api/chat/usage?type=daily');
+      const weeklyResponse = await fetch('/api/chat/usage?type=weekly');
+      const monthlyResponse = await fetch('/api/chat/usage?type=monthly');
+      
+      if (messagesResponse.ok && weeklyResponse.ok && monthlyResponse.ok) {
+        const dailyData = await messagesResponse.json();
+        const weeklyData = await weeklyResponse.json();
+        const monthlyData = await monthlyResponse.json();
+        
+        setMessagesData({
+          daily: dailyData.usage || [],
+          weekly: weeklyData.usage || [],
+          monthly: monthlyData.usage || []
+        });
+      }
+      
+      // Fetch registration data for different periods
+      const regDailyResponse = await fetch('/api/dashboard/registrations?type=daily');
+      const regWeeklyResponse = await fetch('/api/dashboard/registrations?type=weekly');
+      const regMonthlyResponse = await fetch('/api/dashboard/registrations?type=monthly');
+      
+      if (regDailyResponse.ok && regWeeklyResponse.ok && regMonthlyResponse.ok) {
+        const regDailyData = await regDailyResponse.json();
+        const regWeeklyData = await regWeeklyResponse.json();
+        const regMonthlyData = await regMonthlyResponse.json();
+        
+        setRegistrationsData({
+          daily: regDailyData.registrations || [],
+          weekly: regWeeklyData.registrations || [],
+          monthly: regMonthlyData.registrations || []
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error fetching chart data:', error);
+    } finally {
+      setChartDataLoading(false);
+    }
+  };
+
+  // Function to handle page changes
+  const handlePageChange = (page: number) => {
+    if (isPaginating) return; // Prevent multiple rapid clicks
+    setIsPaginating(true);
+    setCurrentPage(page);
+    fetchSessions(page);
+    setTimeout(() => setIsPaginating(false), 500); // Debounce pagination
   };
 
   // Fetch sessions on mount
   useEffect(() => {
-    setLoading(true);
-    fetch('/api/chat/sessions')
-      .then(res => res.json())
-      .then(data => {
-        setSessions(data.sessions || []);
-        setLoading(false);
-      });
+    fetchSessions(); // Initial fetch without filters
   }, []);
+
+  // Fetch dashboard stats when overview tab is active
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchDashboardStats();
+      fetchChartData();
+    }
+  }, [activeTab]);
+
+  // Refetch sessions when filters change (but not on initial mount)
+  useEffect(() => {
+    if (currentPage > 1) { // Only refetch if not on first page
+      fetchSessions(1); // Reset to first page when filters change
+      setCurrentPage(1);
+    }
+  }, [filters.fromDate, filters.toDate, filters.sortBy, filters.searchId]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+R or Cmd+R to refresh current page
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+        e.preventDefault();
+        if (!isPaginating && activeTab === 'history') {
+          fetchSessions(currentPage);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [currentPage, isPaginating, activeTab]);
 
   // Fetch chat history for a session
   const handleViewSession = (session: Session) => {
@@ -687,8 +825,32 @@ const EntabDashboard = () => {
           {/* Overview Tab with dashboard components */}
           {activeTab === 'overview' && (
             <div className="p-10">
-              <h2 className="text-4xl font-bold text-slate-900 mb-2">Dashboard Overview</h2>
-              <p className="text-slate-600 text-lg mb-8">Monitor your platform performance with real-time analytics and insights</p>
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <h2 className="text-4xl font-bold text-slate-900 mb-2">Dashboard Overview</h2>
+                  <p className="text-slate-600 text-lg">Monitor your platform performance with real-time analytics and insights</p>
+                </div>
+                <button
+                  onClick={() => {
+                    fetchDashboardStats();
+                    fetchChartData();
+                  }}
+                  disabled={statsLoading || chartDataLoading}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
+                >
+                  {(statsLoading || chartDataLoading) ? (
+                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  )}
+                  <span>{(statsLoading || chartDataLoading) ? 'Refreshing...' : 'Refresh All Data'}</span>
+                </button>
+              </div>
               {renderOverview()}
             </div>
           )}
@@ -698,7 +860,7 @@ const EntabDashboard = () => {
               <h2 className="text-3xl font-bold text-slate-900 mb-2">Chat History</h2>
               <p className="text-slate-600 text-lg mb-8">Browse and filter past chat sessions</p>
               <div className="bg-white rounded-lg shadow border border-gray-200 p-6 mb-8">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
                     <input
@@ -728,6 +890,25 @@ const EntabDashboard = () => {
                       <option>Oldest First</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Page Size</label>
+                    <select
+                      value={pageSize}
+                      onChange={e => {
+                        const newPageSize = Number(e.target.value);
+                        setPageSize(newPageSize);
+                        setCurrentPage(1);
+                        // Refetch with new page size
+                        setTimeout(() => fetchSessions(1), 0);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value={15}>15 per page</option>
+                      <option value={25}>25 per page</option>
+                      <option value={50}>50 per page</option>
+                      <option value={100}>100 per page</option>
+                    </select>
+                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Search by Session ID</label>
                     <input
@@ -742,10 +923,16 @@ const EntabDashboard = () => {
                 <div className="flex space-x-3">
                   <button
                     onClick={handleApplyFilters}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center space-x-2"
                     disabled={isApplying}
                   >
-                    {isApplying ? 'Applying...' : 'Apply Filters'}
+                    {isApplying && (
+                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    )}
+                    <span>{isApplying ? 'Applying...' : 'Apply Filters'}</span>
                   </button>
                   <button
                     onClick={handleResetFilters}
@@ -758,41 +945,152 @@ const EntabDashboard = () => {
               <div className="bg-white rounded-lg shadow border border-gray-200">
                 <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-900">Chat Sessions</h3>
-                  {loading && <span className="text-sm text-gray-500">Loading...</span>}
+                  <div className="flex items-center space-x-4">
+                    {loading && <span className="text-sm text-gray-500">Loading...</span>}
+                    <span className="text-sm text-gray-500">
+                      Showing {sessions.length} of {totalSessions} sessions
+                    </span>
+                  </div>
                 </div>
-                <div className="divide-y divide-gray-200">
-                  {sessions
-                    .filter(session =>
-                      (!filters.searchId || session.sessionId.includes(filters.searchId)) &&
-                      (!filters.fromDate || new Date(session.lastMessageAt) >= new Date(filters.fromDate)) &&
-                      (!filters.toDate || new Date(session.lastMessageAt) <= new Date(filters.toDate))
-                    )
-                    .sort((a, b) => {
-                      if (filters.sortBy === 'Newest First') {
-                        return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
-                      } else {
-                        return new Date(a.lastMessageAt).getTime() - new Date(b.lastMessageAt).getTime();
-                      }
-                    })
-                    .map(session => (
-                      <div key={session.sessionId} className="p-6 hover:bg-gray-50 transition-colors flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-gray-900">Session ID: {session.sessionId}</div>
-                          <div className="text-sm text-gray-500">Messages: {session.messageCount}</div>
-                          <div className="text-sm text-gray-500">Last Message: {new Date(session.lastMessageAt).toLocaleString()}</div>
-                        </div>
-                        <button
-                          onClick={() => handleViewSession(session)}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          View
-                        </button>
+                
+                {/* Active Filters Summary */}
+                {(filters.fromDate || filters.toDate || filters.searchId) && (
+                  <div className="px-6 py-3 bg-blue-50 border-b border-blue-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-sm text-blue-800">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" clipRule="evenodd"/>
+                        </svg>
+                        <span className="font-medium">Active Filters:</span>
+                        {filters.fromDate && (
+                          <span className="px-2 py-1 bg-blue-100 rounded text-xs">
+                            From: {filters.fromDate}
+                          </span>
+                        )}
+                        {filters.toDate && (
+                          <span className="px-2 py-1 bg-blue-100 rounded text-xs">
+                            To: {filters.toDate}
+                          </span>
+                        )}
+                        {filters.searchId && (
+                          <span className="px-2 py-1 bg-blue-100 rounded text-xs">
+                            Search: "{filters.searchId}"
+                          </span>
+                        )}
+                        <span className="px-2 py-1 bg-blue-100 rounded text-xs">
+                          Sort: {filters.sortBy}
+                        </span>
                       </div>
-                    ))}
-                  {sessions.length === 0 && !loading && (
+                      <button
+                        onClick={handleResetFilters}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        Clear All Filters
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="divide-y divide-gray-200">
+                  {isPaginating && (
+                    <div className="p-6 text-center">
+                      <div className="inline-flex items-center space-x-2 text-gray-500">
+                        <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Loading sessions...</span>
+                      </div>
+                    </div>
+                  )}
+                  {!isPaginating && sessions.map(session => (
+                    <div key={session.sessionId} className="p-6 hover:bg-gray-50 transition-colors flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-gray-900">Session ID: {session.sessionId}</div>
+                        <div className="text-sm text-gray-500">Messages: {session.messageCount}</div>
+                        <div className="text-sm text-gray-500">Last Message: {new Date(session.lastMessageAt).toLocaleString()}</div>
+                      </div>
+                      <button
+                        onClick={() => handleViewSession(session)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        View
+                      </button>
+                    </div>
+                  ))}
+                  {sessions.length === 0 && !loading && !isPaginating && (
                     <div className="p-6 text-gray-500">No chat sessions found.</div>
                   )}
                 </div>
+                
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                    <div className="text-sm text-gray-500">
+                      Page {currentPage} of {totalPages} (Total: {totalSessions} sessions)
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-gray-500">Go to:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={totalPages}
+                          value={currentPage}
+                          onChange={(e) => {
+                            const page = parseInt(e.target.value);
+                            if (page >= 1 && page <= totalPages) {
+                              handlePageChange(page);
+                            }
+                          }}
+                          disabled={isPaginating}
+                          className="w-16 px-2 py-1 text-sm border border-gray-300 rounded-md text-center disabled:opacity-50"
+                        />
+                        <span className="text-sm text-gray-500">of {totalPages}</span>
+                      </div>
+                      <button
+                        onClick={() => fetchSessions(currentPage)}
+                        disabled={isPaginating}
+                        className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                        title="Refresh current page"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Refresh</span>
+                      </button>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handlePageChange(1)}
+                          disabled={currentPage === 1 || isPaginating}
+                          className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isPaginating ? '...' : 'First'}
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(currentPage - 1)}
+                          disabled={!hasPrevPage || isPaginating}
+                          className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isPaginating ? '...' : 'Previous'}
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(currentPage + 1)}
+                          disabled={!hasNextPage || isPaginating}
+                          className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isPaginating ? '...' : 'Next'}
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(totalPages)}
+                          disabled={currentPage === totalPages || isPaginating}
+                          className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isPaginating ? '...' : 'Last'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               {/* Modal for chat history */}
               {showModal && selectedSession && (

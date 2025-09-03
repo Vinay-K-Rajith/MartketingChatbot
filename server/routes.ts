@@ -259,31 +259,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Dashboard: Get all chat sessions (from MChat) with pagination
+  // Dashboard: Get all chat sessions (from MChat) with pagination and backend filtering
   app.get('/api/chat/sessions', async (req, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 15;
       const skip = (page - 1) * limit;
+      
+      // Extract filter parameters
+      const fromDate = req.query.fromDate as string;
+      const toDate = req.query.toDate as string;
+      const sortBy = req.query.sortBy as string || 'Newest First';
+      const searchId = req.query.searchId as string;
 
       const col = await getMongoCollection();
 
-      // Get total count of unique sessions
-      const totalSessions = await col.distinct("sessionId");
-      const total = totalSessions.length;
+      // Build match conditions for filtering
+      const matchConditions: any = {};
+      
+      // Date range filtering
+      if (fromDate || toDate) {
+        matchConditions.timestamp = {};
+        if (fromDate) {
+          matchConditions.timestamp.$gte = new Date(fromDate + 'T00:00:00.000Z');
+        }
+        if (toDate) {
+          matchConditions.timestamp.$lte = new Date(toDate + 'T23:59:59.999Z');
+        }
+      }
+      
+      // Session ID search filtering
+      if (searchId) {
+        matchConditions.sessionId = { $regex: searchId, $options: 'i' };
+      }
 
-      // Aggregate paginated sessions
-      const sessions = await col.aggregate([
-        { $group: {
+      // Build aggregation pipeline
+      const pipeline: any[] = [];
+      
+      // Apply filters first if any exist
+      if (Object.keys(matchConditions).length > 0) {
+        pipeline.push({ $match: matchConditions });
+      }
+      
+      // Group by sessionId and calculate aggregates
+      pipeline.push({
+        $group: {
           _id: "$sessionId",
           lastMessageAt: { $max: "$timestamp" },
           messageCount: { $sum: 1 },
           firstMessage: { $first: "$content" }
-        }},
-        { $sort: { lastMessageAt: -1 } },
-        { $skip: skip },
-        { $limit: limit }
-      ]).toArray();
+        }
+      });
+      
+      // Sort based on parameter
+      const sortDirection = sortBy === 'Oldest First' ? 1 : -1;
+      pipeline.push({ $sort: { lastMessageAt: sortDirection } });
+      
+      // Get total count for pagination (without skip/limit)
+      const totalPipeline = [...pipeline];
+      const totalResult = await col.aggregate(totalPipeline).toArray();
+      const total = totalResult.length;
+      
+      // Apply pagination
+      pipeline.push({ $skip: skip });
+      pipeline.push({ $limit: limit });
+      
+      // Execute final aggregation
+      const sessions = await col.aggregate(pipeline).toArray();
 
       res.json({
         sessions: sessions.map(s => ({
@@ -294,10 +336,225 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
         total,
         page,
-        limit
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPrevPage: page > 1
       });
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch sessions', details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Dashboard: Get dashboard statistics (total messages, registrations, etc.)
+  app.get('/api/dashboard/stats', async (req, res) => {
+    try {
+      const col = await getMongoCollection();
+      
+      // Get total messages count
+      const totalMessages = await col.countDocuments({});
+      
+      // Get registrations count (messages containing "Register for the Demo")
+      const registrations = await col.countDocuments({
+        content: { $regex: /Register for the Demo/i }
+      });
+      
+      // Get unique sessions count
+      const uniqueSessions = await col.distinct('sessionId');
+      const totalSessions = uniqueSessions.length;
+      
+      // Get active users (sessions with messages in last 24 hours)
+      const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const activeUsers = await col.distinct('sessionId', {
+        timestamp: { $gte: last24Hours }
+      });
+      const activeUsersCount = activeUsers.length;
+      
+      // Calculate conversion rate (registrations / total sessions)
+      const conversionRate = totalSessions > 0 ? (registrations / totalSessions * 100).toFixed(1) : '0.0';
+      
+      // Calculate percentage changes (comparing last 7 days vs previous 7 days)
+      const now = new Date();
+      const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const previous7Days = new Date(last7Days.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Debug logging for date ranges
+      console.log('Dashboard Stats - Date Ranges:', {
+        now: now.toISOString(),
+        last7Days: last7Days.toISOString(),
+        previous7Days: previous7Days.toISOString(),
+        last7DaysDuration: now.getTime() - last7Days.getTime(),
+        previous7DaysDuration: last7Days.getTime() - previous7Days.getTime()
+      });
+      
+      // Messages in last 7 days (exclusive end date to avoid overlap)
+      const messagesLast7Days = await col.countDocuments({
+        timestamp: { $gte: last7Days, $lt: now }
+      });
+      
+      // Messages in previous 7 days (exclusive end date to avoid overlap)
+      const messagesPrevious7Days = await col.countDocuments({
+        timestamp: { $gte: previous7Days, $lt: last7Days }
+      });
+      
+      // Debug logging for message counts
+      console.log('Dashboard Stats - Message Counts:', {
+        messagesLast7Days,
+        messagesPrevious7Days,
+        totalMessages
+      });
+      
+      // Additional validation logging
+      console.log('Dashboard Stats - Validation:', {
+        last7DaysRange: `${last7Days.toISOString()} to ${now.toISOString()}`,
+        previous7DaysRange: `${previous7Days.toISOString()} to ${last7Days.toISOString()}`,
+        noOverlap: last7Days.getTime() === previous7Days.getTime() + (7 * 24 * 60 * 60 * 1000)
+      });
+      
+      // Calculate message change percentage
+      let messageChange = '0%';
+      let messageChangeType: 'up' | 'down' = 'up';
+      if (messagesPrevious7Days > 0) {
+        const change = ((messagesLast7Days - messagesPrevious7Days) / messagesPrevious7Days * 100);
+        messageChange = `${Math.abs(change).toFixed(1)}%`;
+        messageChangeType = change >= 0 ? 'up' : 'down';
+      } else if (messagesLast7Days > 0) {
+        // If no previous messages but current period has messages, show 100% increase
+        messageChange = '100%';
+        messageChangeType = 'up';
+      }
+      
+      // Registrations in last 7 days (exclusive end date to avoid overlap)
+      const registrationsLast7Days = await col.countDocuments({
+        content: { $regex: /Register for the Demo/i },
+        timestamp: { $gte: last7Days, $lt: now }
+      });
+      
+      // Registrations in previous 7 days
+      const registrationsPrevious7Days = await col.countDocuments({
+        content: { $regex: /Register for the Demo/i },
+        timestamp: { $gte: previous7Days, $lt: last7Days }
+      });
+      
+      // Calculate registration change percentage
+      let registrationChange = '0%';
+      let registrationChangeType: 'up' | 'down' = 'up';
+      if (registrationsPrevious7Days > 0) {
+        const change = ((registrationsLast7Days - registrationsPrevious7Days) / registrationsPrevious7Days * 100);
+        registrationChange = `${Math.abs(change).toFixed(1)}%`;
+        registrationChangeType = change >= 0 ? 'up' : 'down';
+      } else if (registrationsLast7Days > 0) {
+        // If no previous registrations but current period has registrations, show 100% increase
+        registrationChange = '100%';
+        registrationChangeType = 'up';
+      }
+      
+      // Total Sessions change (last 7 days vs previous 7 days)
+      // Count unique sessions that started within each period
+      const sessionsLast7Days = await col.distinct('sessionId', {
+        timestamp: { $gte: last7Days, $lt: now }
+      });
+      
+      const sessionsPrevious7Days = await col.distinct('sessionId', {
+        timestamp: { $gte: previous7Days, $lt: last7Days }
+      });
+      
+      let totalSessionsChange = '0%';
+      let totalSessionsChangeType: 'up' | 'down' = 'up';
+      if (sessionsPrevious7Days.length > 0) {
+        const change = ((sessionsLast7Days.length - sessionsPrevious7Days.length) / sessionsPrevious7Days.length * 100);
+        totalSessionsChange = `${Math.abs(change).toFixed(1)}%`;
+        totalSessionsChangeType = change >= 0 ? 'up' : 'down';
+      } else if (sessionsLast7Days.length > 0) {
+        // If no previous sessions but current period has sessions, show 100% increase
+        totalSessionsChange = '100%';
+        totalSessionsChangeType = 'up';
+      }
+      
+      // Conversion Rate change (last 7 days vs previous 7 days)
+      // Calculate conversion rate for each period separately
+      const conversionLast7Days = sessionsLast7Days.length > 0 ? 
+        (registrationsLast7Days / sessionsLast7Days.length * 100) : 0;
+      
+      const conversionPrevious7Days = sessionsPrevious7Days.length > 0 ? 
+        (await col.countDocuments({
+          content: { $regex: /Register for the Demo/i },
+          timestamp: { $gte: previous7Days, $lt: last7Days }
+        }) / sessionsPrevious7Days.length * 100) : 0;
+      
+      let conversionRateChange = '0%';
+      let conversionRateChangeType: 'up' | 'down' = 'up';
+      if (conversionPrevious7Days > 0) {
+        const change = ((conversionLast7Days - conversionPrevious7Days) / conversionPrevious7Days * 100);
+        conversionRateChange = `${Math.abs(change).toFixed(1)}%`;
+        conversionRateChangeType = change >= 0 ? 'up' : 'down';
+      } else if (conversionLast7Days > 0) {
+        // If no previous conversion rate but current period has conversion, show 100% increase
+        conversionRateChange = '100%';
+        conversionRateChangeType = 'up';
+      }
+      
+      res.json({
+        totalMessages,
+        totalMessagesChange: messageChange,
+        totalMessagesChangeType: messageChangeType,
+        registrations,
+        registrationsChange: registrationChange,
+        registrationsChangeType: registrationChangeType,
+        activeUsers: activeUsersCount,
+        activeUsersChange: '0%', // Keeping for backward compatibility
+        activeUsersChangeType: 'up', // Keeping for backward compatibility
+        conversionRate,
+        conversionRateChange,
+        conversionRateChangeType: conversionRateChangeType,
+        totalSessions,
+        totalSessionsChange,
+        totalSessionsChangeType: totalSessionsChangeType
+      });
+      
+      // Log final calculated values for verification
+      console.log('Dashboard Stats - Final Values:', {
+        totalMessages,
+        totalMessagesChange: messageChange,
+        registrations,
+        registrationsChange: registrationChange,
+        totalSessions,
+        totalSessionsChange,
+        conversionRate,
+        conversionRateChange
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch dashboard stats', details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Dashboard: Get registration analytics over time
+  app.get('/api/dashboard/registrations', async (req, res) => {
+    try {
+      const col = await getMongoCollection();
+      const type = req.query.type || 'daily';
+      
+      let groupId: any;
+      if (type === 'monthly') {
+        groupId = { $dateToString: { format: '%Y-%m', date: '$timestamp' } };
+      } else if (type === 'weekly') {
+        groupId = { $isoWeek: '$timestamp' };
+      } else if (type === 'hourly') {
+        groupId = { $dateToString: { format: '%Y-%m-%d %H:00', date: '$timestamp' } };
+      } else {
+        groupId = { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } };
+      }
+      
+      const registrations = await col.aggregate([
+        { $match: { content: { $regex: /Register for the Demo/i } } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+        { $project: { period: '$_id', registrations: '$count', _id: 0 } }
+      ]).toArray();
+      
+      res.json({ registrations });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch registration analytics', details: err instanceof Error ? err.message : String(err) });
     }
   });
 

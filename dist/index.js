@@ -413,20 +413,44 @@ async function registerRoutes(app2) {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 15;
       const skip = (page - 1) * limit;
+      const fromDate = req.query.fromDate;
+      const toDate = req.query.toDate;
+      const sortBy = req.query.sortBy || "Newest First";
+      const searchId = req.query.searchId;
       const col = await getMongoCollection2();
-      const totalSessions = await col.distinct("sessionId");
-      const total = totalSessions.length;
-      const sessions = await col.aggregate([
-        { $group: {
+      const matchConditions = {};
+      if (fromDate || toDate) {
+        matchConditions.timestamp = {};
+        if (fromDate) {
+          matchConditions.timestamp.$gte = /* @__PURE__ */ new Date(fromDate + "T00:00:00.000Z");
+        }
+        if (toDate) {
+          matchConditions.timestamp.$lte = /* @__PURE__ */ new Date(toDate + "T23:59:59.999Z");
+        }
+      }
+      if (searchId) {
+        matchConditions.sessionId = { $regex: searchId, $options: "i" };
+      }
+      const pipeline = [];
+      if (Object.keys(matchConditions).length > 0) {
+        pipeline.push({ $match: matchConditions });
+      }
+      pipeline.push({
+        $group: {
           _id: "$sessionId",
           lastMessageAt: { $max: "$timestamp" },
           messageCount: { $sum: 1 },
           firstMessage: { $first: "$content" }
-        } },
-        { $sort: { lastMessageAt: -1 } },
-        { $skip: skip },
-        { $limit: limit }
-      ]).toArray();
+        }
+      });
+      const sortDirection = sortBy === "Oldest First" ? 1 : -1;
+      pipeline.push({ $sort: { lastMessageAt: sortDirection } });
+      const totalPipeline = [...pipeline];
+      const totalResult = await col.aggregate(totalPipeline).toArray();
+      const total = totalResult.length;
+      pipeline.push({ $skip: skip });
+      pipeline.push({ $limit: limit });
+      const sessions = await col.aggregate(pipeline).toArray();
       res.json({
         sessions: sessions.map((s) => ({
           sessionId: s._id,
@@ -436,10 +460,171 @@ async function registerRoutes(app2) {
         })),
         total,
         page,
-        limit
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPrevPage: page > 1
       });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch sessions", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+  app2.get("/api/dashboard/stats", async (req, res) => {
+    try {
+      const col = await getMongoCollection2();
+      const totalMessages = await col.countDocuments({});
+      const registrations = await col.countDocuments({
+        content: { $regex: /Register for the Demo/i }
+      });
+      const uniqueSessions = await col.distinct("sessionId");
+      const totalSessions = uniqueSessions.length;
+      const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1e3);
+      const activeUsers = await col.distinct("sessionId", {
+        timestamp: { $gte: last24Hours }
+      });
+      const activeUsersCount = activeUsers.length;
+      const conversionRate = totalSessions > 0 ? (registrations / totalSessions * 100).toFixed(1) : "0.0";
+      const now = /* @__PURE__ */ new Date();
+      const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1e3);
+      const previous7Days = new Date(last7Days.getTime() - 7 * 24 * 60 * 60 * 1e3);
+      console.log("Dashboard Stats - Date Ranges:", {
+        now: now.toISOString(),
+        last7Days: last7Days.toISOString(),
+        previous7Days: previous7Days.toISOString(),
+        last7DaysDuration: now.getTime() - last7Days.getTime(),
+        previous7DaysDuration: last7Days.getTime() - previous7Days.getTime()
+      });
+      const messagesLast7Days = await col.countDocuments({
+        timestamp: { $gte: last7Days, $lt: now }
+      });
+      const messagesPrevious7Days = await col.countDocuments({
+        timestamp: { $gte: previous7Days, $lt: last7Days }
+      });
+      console.log("Dashboard Stats - Message Counts:", {
+        messagesLast7Days,
+        messagesPrevious7Days,
+        totalMessages
+      });
+      console.log("Dashboard Stats - Validation:", {
+        last7DaysRange: `${last7Days.toISOString()} to ${now.toISOString()}`,
+        previous7DaysRange: `${previous7Days.toISOString()} to ${last7Days.toISOString()}`,
+        noOverlap: last7Days.getTime() === previous7Days.getTime() + 7 * 24 * 60 * 60 * 1e3
+      });
+      let messageChange = "0%";
+      let messageChangeType = "up";
+      if (messagesPrevious7Days > 0) {
+        const change = (messagesLast7Days - messagesPrevious7Days) / messagesPrevious7Days * 100;
+        messageChange = `${Math.abs(change).toFixed(1)}%`;
+        messageChangeType = change >= 0 ? "up" : "down";
+      } else if (messagesLast7Days > 0) {
+        messageChange = "100%";
+        messageChangeType = "up";
+      }
+      const registrationsLast7Days = await col.countDocuments({
+        content: { $regex: /Register for the Demo/i },
+        timestamp: { $gte: last7Days, $lt: now }
+      });
+      const registrationsPrevious7Days = await col.countDocuments({
+        content: { $regex: /Register for the Demo/i },
+        timestamp: { $gte: previous7Days, $lt: last7Days }
+      });
+      let registrationChange = "0%";
+      let registrationChangeType = "up";
+      if (registrationsPrevious7Days > 0) {
+        const change = (registrationsLast7Days - registrationsPrevious7Days) / registrationsPrevious7Days * 100;
+        registrationChange = `${Math.abs(change).toFixed(1)}%`;
+        registrationChangeType = change >= 0 ? "up" : "down";
+      } else if (registrationsLast7Days > 0) {
+        registrationChange = "100%";
+        registrationChangeType = "up";
+      }
+      const sessionsLast7Days = await col.distinct("sessionId", {
+        timestamp: { $gte: last7Days, $lt: now }
+      });
+      const sessionsPrevious7Days = await col.distinct("sessionId", {
+        timestamp: { $gte: previous7Days, $lt: last7Days }
+      });
+      let totalSessionsChange = "0%";
+      let totalSessionsChangeType = "up";
+      if (sessionsPrevious7Days.length > 0) {
+        const change = (sessionsLast7Days.length - sessionsPrevious7Days.length) / sessionsPrevious7Days.length * 100;
+        totalSessionsChange = `${Math.abs(change).toFixed(1)}%`;
+        totalSessionsChangeType = change >= 0 ? "up" : "down";
+      } else if (sessionsLast7Days.length > 0) {
+        totalSessionsChange = "100%";
+        totalSessionsChangeType = "up";
+      }
+      const conversionLast7Days = sessionsLast7Days.length > 0 ? registrationsLast7Days / sessionsLast7Days.length * 100 : 0;
+      const conversionPrevious7Days = sessionsPrevious7Days.length > 0 ? await col.countDocuments({
+        content: { $regex: /Register for the Demo/i },
+        timestamp: { $gte: previous7Days, $lt: last7Days }
+      }) / sessionsPrevious7Days.length * 100 : 0;
+      let conversionRateChange = "0%";
+      let conversionRateChangeType = "up";
+      if (conversionPrevious7Days > 0) {
+        const change = (conversionLast7Days - conversionPrevious7Days) / conversionPrevious7Days * 100;
+        conversionRateChange = `${Math.abs(change).toFixed(1)}%`;
+        conversionRateChangeType = change >= 0 ? "up" : "down";
+      } else if (conversionLast7Days > 0) {
+        conversionRateChange = "100%";
+        conversionRateChangeType = "up";
+      }
+      res.json({
+        totalMessages,
+        totalMessagesChange: messageChange,
+        totalMessagesChangeType: messageChangeType,
+        registrations,
+        registrationsChange: registrationChange,
+        registrationsChangeType: registrationChangeType,
+        activeUsers: activeUsersCount,
+        activeUsersChange: "0%",
+        // Keeping for backward compatibility
+        activeUsersChangeType: "up",
+        // Keeping for backward compatibility
+        conversionRate,
+        conversionRateChange,
+        conversionRateChangeType,
+        totalSessions,
+        totalSessionsChange,
+        totalSessionsChangeType
+      });
+      console.log("Dashboard Stats - Final Values:", {
+        totalMessages,
+        totalMessagesChange: messageChange,
+        registrations,
+        registrationsChange: registrationChange,
+        totalSessions,
+        totalSessionsChange,
+        conversionRate,
+        conversionRateChange
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch dashboard stats", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+  app2.get("/api/dashboard/registrations", async (req, res) => {
+    try {
+      const col = await getMongoCollection2();
+      const type = req.query.type || "daily";
+      let groupId;
+      if (type === "monthly") {
+        groupId = { $dateToString: { format: "%Y-%m", date: "$timestamp" } };
+      } else if (type === "weekly") {
+        groupId = { $isoWeek: "$timestamp" };
+      } else if (type === "hourly") {
+        groupId = { $dateToString: { format: "%Y-%m-%d %H:00", date: "$timestamp" } };
+      } else {
+        groupId = { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } };
+      }
+      const registrations = await col.aggregate([
+        { $match: { content: { $regex: /Register for the Demo/i } } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+        { $project: { period: "$_id", registrations: "$count", _id: 0 } }
+      ]).toArray();
+      res.json({ registrations });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch registration analytics", details: err instanceof Error ? err.message : String(err) });
     }
   });
   app2.get("/api/chat/usage", async (req, res) => {
@@ -773,6 +958,12 @@ async function registerRoutes(app2) {
             left: auto !important;
             position: fixed !important;
             z-index: 1000000;
+          }
+          .chatbot-btn-icon {
+            width: 88%;
+            height: 88%;
+            max-width: 48px;
+            max-height: 48px;
           }
         }
       \`;
