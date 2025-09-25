@@ -7,6 +7,110 @@ export type WorkflowOption = {
   options?: WorkflowOption[];
 };
 
+// API client for workflows
+export type WorkflowAPINode = {
+  id: string;
+  title: string;
+  type: 'start' | 'category' | 'action' | 'module' | 'condition' | 'response';
+  message: string;
+  connections: string[];
+  position: { x: number; y: number };
+  conditions?: Array<{ field: string; operator: 'equals' | 'contains' | 'greater' | 'less'; value: string }>;
+  metadata?: { collectContact?: boolean; image?: string; variables?: Record<string, any> };
+};
+
+export type WorkflowAPIModel = {
+  _id?: string;
+  name: string;
+  description: string;
+  version: string;
+  isActive: boolean;
+  nodes: Record<string, WorkflowAPINode>;
+  startNode: string;
+  createdAt?: string;
+  updatedAt?: string;
+  tags: string[];
+  metadata?: { category: string; language: string; industry: string };
+};
+
+export async function apiListWorkflows(params?: { active?: boolean; tags?: string[]; category?: string }) {
+  const query = new URLSearchParams();
+  if (typeof params?.active === 'boolean') query.set('active', String(params.active));
+  if (params?.tags?.length) query.set('tags', params.tags.join(','));
+  if (params?.category) query.set('category', params.category);
+  const res = await fetch(`/api/workflows${query.toString() ? `?${query.toString()}` : ''}`);
+  if (!res.ok) throw new Error('Failed to fetch workflows');
+  return res.json();
+}
+
+export async function apiGetWorkflow(id: string) {
+  const res = await fetch(`/api/workflows/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch workflow');
+  return res.json();
+}
+
+export async function apiCreateWorkflow(data: Omit<WorkflowAPIModel, '_id' | 'createdAt' | 'updatedAt'>) {
+  const res = await fetch(`/api/workflows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create workflow');
+  return res.json();
+}
+
+export async function apiUpdateWorkflow(id: string, updates: Partial<WorkflowAPIModel>) {
+  const res = await fetch(`/api/workflows/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update workflow');
+  return res.json();
+}
+
+export async function apiDeleteWorkflow(id: string) {
+  const res = await fetch(`/api/workflows/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete workflow');
+  return res.json();
+}
+
+export async function apiDuplicateWorkflow(id: string, name: string) {
+  const res = await fetch(`/api/workflows/${id}/duplicate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error('Failed to duplicate workflow');
+  return res.json();
+}
+
+export async function apiGetWorkflowTemplates() {
+  const res = await fetch(`/api/workflow-templates`);
+  if (!res.ok) throw new Error('Failed to fetch workflow templates');
+  return res.json();
+}
+
+export async function apiValidateWorkflow(data: WorkflowAPIModel) {
+  const res = await fetch(`/api/workflows/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to validate workflow');
+  return res.json();
+}
+
+export async function apiTestWorkflow(id: string, testInput: { startNode?: string; userInput?: string; variables?: Record<string, any> }) {
+  const res = await fetch(`/api/workflows/${id}/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(testInput),
+  });
+  if (!res.ok) throw new Error('Failed to test workflow');
+  return res.json();
+}
+
 export type WorkflowNode = {
   message?: string;
   options?: WorkflowOption[];

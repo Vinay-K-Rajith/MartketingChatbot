@@ -12,20 +12,98 @@ import express2 from "express";
 // server/routes.ts
 import { createServer } from "http";
 
-// server/storage.ts
+// server/services/database.ts
 import { MongoClient } from "mongodb";
-var mongoUrl = process.env.MONGO_URL || "mongodb+srv://vaishakhp11:PiPa7LUEZ5ufQo8z@cluster0.toscmfj.mongodb.net/";
+var mongoUrl = process.env.MONGO_URL;
 var dbName = "test";
-var collectionName = "MChat_History";
-var mongoClient = null;
-async function getMongoCollection() {
-  if (!mongoUrl) throw new Error("MONGO_URL environment variable is not set. Chat history will not be saved.");
-  if (!mongoClient) {
-    mongoClient = new MongoClient(mongoUrl);
-    await mongoClient.connect();
+var DatabaseService = class {
+  client = null;
+  db = null;
+  isConnecting = false;
+  async connect() {
+    if (this.client && this.db) return;
+    if (this.isConnecting) {
+      while (this.isConnecting) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return;
+    }
+    try {
+      this.isConnecting = true;
+      if (!mongoUrl) {
+        throw new Error("MONGO_URL environment variable is not set");
+      }
+      this.client = new MongoClient(mongoUrl);
+      await this.client.connect();
+      this.db = this.client.db(dbName);
+      console.log(`Connected to MongoDB database: ${dbName}`);
+    } catch (error) {
+      console.error("Failed to connect to MongoDB:", error);
+      throw error;
+    } finally {
+      this.isConnecting = false;
+    }
   }
-  return mongoClient.db(dbName).collection(collectionName);
-}
+  async disconnect() {
+    if (this.client) {
+      await this.client.close();
+      this.client = null;
+      this.db = null;
+      console.log("Disconnected from MongoDB");
+    }
+  }
+  async getDatabase() {
+    if (!this.db) {
+      await this.connect();
+    }
+    return this.db;
+  }
+  async getCollection(collectionName) {
+    const db = await this.getDatabase();
+    return db.collection(collectionName);
+  }
+  // Convenience methods for common collections
+  async getChatCollection() {
+    return this.getCollection("MChat");
+  }
+  async getKnowledgeBaseCollection() {
+    return this.getCollection("MKB");
+  }
+  async getWorkflowCollection() {
+    return this.getCollection("Workflows");
+  }
+  async getUserCollection() {
+    return this.getCollection("Users");
+  }
+  async getSessionCollection() {
+    return this.getCollection("Sessions");
+  }
+  // Health check method
+  async isHealthy() {
+    try {
+      const db = await this.getDatabase();
+      await db.admin().ping();
+      return true;
+    } catch (error) {
+      console.error("Database health check failed:", error);
+      return false;
+    }
+  }
+};
+var databaseService = new DatabaseService();
+process.on("SIGINT", async () => {
+  console.log("Received SIGINT, closing database connection...");
+  await databaseService.disconnect();
+  process.exit(0);
+});
+process.on("SIGTERM", async () => {
+  console.log("Received SIGTERM, closing database connection...");
+  await databaseService.disconnect();
+  process.exit(0);
+});
+var database_default = databaseService;
+
+// server/storage.ts
 var MongoStorage = class {
   async getUser(id) {
     return void 0;
@@ -37,8 +115,21 @@ var MongoStorage = class {
     throw new Error("Not implemented");
   }
   async createChatSession(session) {
-    if (!mongoUrl) {
-      console.warn("[MongoStorage] MONGO_URL not set. Skipping createChatSession.");
+    try {
+      const col = await database_default.getCollection("MChat_History");
+      const now = /* @__PURE__ */ new Date();
+      const doc = {
+        id: Date.now(),
+        sessionId: session.sessionId,
+        createdAt: now,
+        updatedAt: now,
+        type: "session",
+        timestamp: now
+      };
+      await col.insertOne(doc);
+      return doc;
+    } catch (error) {
+      console.error("[MongoStorage] Error creating chat session:", error);
       return {
         id: Date.now(),
         sessionId: session.sessionId,
@@ -47,23 +138,23 @@ var MongoStorage = class {
         type: "session"
       };
     }
-    const col = await getMongoCollection();
-    const now = /* @__PURE__ */ new Date();
-    const doc = {
-      id: Date.now(),
-      sessionId: session.sessionId,
-      createdAt: now,
-      updatedAt: now,
-      type: "session",
-      timestamp: now
-      // Always set timestamp for session
-    };
-    await col.insertOne(doc);
-    return doc;
   }
   async createChatMessage(message) {
-    if (!mongoUrl) {
-      console.warn("[MongoStorage] MONGO_URL not set. Skipping createChatMessage.");
+    try {
+      const col = await database_default.getCollection("MChat_History");
+      const doc = {
+        id: Date.now(),
+        sessionId: message.sessionId,
+        content: message.content,
+        isUser: message.isUser,
+        timestamp: /* @__PURE__ */ new Date(),
+        type: "message",
+        metadata: message.metadata ?? null
+      };
+      await col.insertOne(doc);
+      return doc;
+    } catch (error) {
+      console.error("[MongoStorage] Error creating chat message:", error);
       return {
         id: Date.now(),
         sessionId: message.sessionId,
@@ -73,34 +164,23 @@ var MongoStorage = class {
         metadata: message.metadata ?? null
       };
     }
-    const col = await getMongoCollection();
-    const doc = {
-      id: Date.now(),
-      sessionId: message.sessionId,
-      content: message.content,
-      isUser: message.isUser,
-      timestamp: /* @__PURE__ */ new Date(),
-      type: "message",
-      metadata: null
-    };
-    await col.insertOne(doc);
-    return doc;
   }
   async getChatMessages(sessionId) {
-    if (!mongoUrl) {
-      console.warn("[MongoStorage] MONGO_URL not set. Returning empty chat history.");
+    try {
+      const col = await database_default.getCollection("MChat_History");
+      const docs = await col.find({ sessionId, type: "message" }).sort({ timestamp: 1 }).toArray();
+      return docs.map((doc) => ({
+        id: doc.id ?? (doc._id ? doc._id.toString() : void 0),
+        sessionId: doc.sessionId,
+        content: doc.content,
+        isUser: doc.isUser,
+        timestamp: doc.timestamp,
+        metadata: doc.metadata ?? null
+      }));
+    } catch (error) {
+      console.error("[MongoStorage] Error fetching chat messages:", error);
       return [];
     }
-    const col = await getMongoCollection();
-    const docs = await col.find({ sessionId, type: "message" }).sort({ timestamp: 1 }).toArray();
-    return docs.map((doc) => ({
-      id: doc.id ?? (doc._id ? doc._id.toString() : void 0),
-      sessionId: doc.sessionId,
-      content: doc.content,
-      isUser: doc.isUser,
-      timestamp: doc.timestamp,
-      metadata: doc.metadata ?? null
-    }));
   }
 };
 var storage = new MongoStorage();
@@ -114,13 +194,13 @@ var genAI = new GoogleGenerativeAI(
 var model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 async function fetchCompanyContextFromMKB() {
   const mongoUrl3 = process.env.MONGO_URL;
-  const dbName3 = "test";
+  const dbName2 = "test";
   const mkbCollectionName = "MKB";
-  const client2 = new MongoClient2(mongoUrl3);
-  await client2.connect();
-  const col = client2.db(dbName3).collection(mkbCollectionName);
+  const client = new MongoClient2(mongoUrl3);
+  await client.connect();
+  const col = client.db(dbName2).collection(mkbCollectionName);
   const doc = await col.findOne({});
-  await client2.close();
+  await client.close();
   if (!doc) return {};
   const { _id, ...fields } = doc;
   return fields;
@@ -157,20 +237,11 @@ Please respond to the user's query in a professional, marketing-focused way that
 
 // server/routes.ts
 import { nanoid } from "nanoid";
-import fs from "fs";
-import path from "path";
 import fetch from "node-fetch";
-import { MongoClient as MongoClient4 } from "mongodb";
 
 // server/services/chat-history.ts
-import { MongoClient as MongoClient3 } from "mongodb";
-var MONGO_URL = process.env.MONGO_URL || "mongodb+srv://vaishakhp11:PiPa7LUEZ5ufQo8z@cluster0.toscmfj.mongodb.net/";
-var DB_NAME = process.env.DB_NAME || "test";
-var COLLECTION = process.env.CHAT_COLLECTION || "MChat";
-var client = new MongoClient3(MONGO_URL);
 async function saveChatMessage({ sessionId, content, isUser, timestamp, nodeKey, type }) {
-  await client.connect();
-  const db = client.db(DB_NAME);
+  const collection = await database_default.getChatCollection();
   const doc = {
     sessionId,
     content,
@@ -179,13 +250,12 @@ async function saveChatMessage({ sessionId, content, isUser, timestamp, nodeKey,
     nodeKey,
     type
   };
-  await db.collection(COLLECTION).insertOne(doc);
+  await collection.insertOne(doc);
   return doc;
 }
 async function getChatMessagesBySession(sessionId) {
-  await client.connect();
-  const db = client.db(DB_NAME);
-  const messages = await db.collection(COLLECTION).find({ sessionId }).sort({ timestamp: 1 }).toArray();
+  const collection = await database_default.getChatCollection();
+  const messages = await collection.find({ sessionId }).sort({ timestamp: 1 }).toArray();
   return messages.map((m) => ({
     sessionId: m.sessionId,
     content: m.content,
@@ -196,31 +266,318 @@ async function getChatMessagesBySession(sessionId) {
   }));
 }
 
+// server/services/workflow.ts
+import { ObjectId } from "mongodb";
+async function createWorkflow(workflow) {
+  const col = await database_default.getWorkflowCollection();
+  const now = /* @__PURE__ */ new Date();
+  const newWorkflow = {
+    ...workflow,
+    createdAt: now,
+    updatedAt: now,
+    version: workflow.version || "1.0.0"
+  };
+  const result = await col.insertOne(newWorkflow);
+  return { ...newWorkflow, _id: result.insertedId };
+}
+async function getWorkflowById(id) {
+  const col = await database_default.getWorkflowCollection();
+  const workflow = await col.findOne({ _id: new ObjectId(id) });
+  return workflow;
+}
+async function getAllWorkflows(options) {
+  const col = await database_default.getWorkflowCollection();
+  const query = {};
+  if (options?.isActive !== void 0) {
+    query.isActive = options.isActive;
+  }
+  if (options?.tags && options.tags.length > 0) {
+    query.tags = { $in: options.tags };
+  }
+  if (options?.category) {
+    query["metadata.category"] = options.category;
+  }
+  const workflows = await col.find(query).sort({ updatedAt: -1 }).toArray();
+  return workflows;
+}
+async function updateWorkflow(id, updates) {
+  const col = await database_default.getWorkflowCollection();
+  const result = await col.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: {
+        ...updates,
+        updatedAt: /* @__PURE__ */ new Date()
+      }
+    }
+  );
+  return result.matchedCount > 0;
+}
+async function deleteWorkflow(id) {
+  const col = await database_default.getWorkflowCollection();
+  const result = await col.deleteOne({ _id: new ObjectId(id) });
+  return result.deletedCount > 0;
+}
+async function duplicateWorkflow(id, newName) {
+  const originalWorkflow = await getWorkflowById(id);
+  if (!originalWorkflow) return null;
+  const { _id, createdAt, updatedAt, ...workflowData } = originalWorkflow;
+  const duplicatedWorkflow = await createWorkflow({
+    ...workflowData,
+    name: newName,
+    isActive: false
+    // Duplicated workflows start as inactive
+  });
+  return duplicatedWorkflow;
+}
+async function getWorkflowTemplates() {
+  const templates = [
+    {
+      name: "School ERP Demo Flow",
+      description: "Standard workflow for School ERP product demonstration",
+      category: "Education",
+      startNode: "mainMenu",
+      tags: ["erp", "school", "demo"],
+      nodes: {
+        mainMenu: {
+          id: "mainMenu",
+          title: "Main Menu",
+          type: "start",
+          message: "Welcome to our School ERP! How can I help you today?",
+          connections: ["features", "demo", "pricing"],
+          position: { x: 400, y: 100 }
+        },
+        features: {
+          id: "features",
+          title: "Features",
+          type: "category",
+          message: "Here are our key features...",
+          connections: ["demo"],
+          position: { x: 200, y: 300 }
+        },
+        demo: {
+          id: "demo",
+          title: "Schedule Demo",
+          type: "action",
+          message: "Let's schedule your demo!",
+          connections: [],
+          position: { x: 400, y: 500 },
+          metadata: { collectContact: true }
+        },
+        pricing: {
+          id: "pricing",
+          title: "Pricing",
+          type: "category",
+          message: "Here's our pricing information...",
+          connections: ["demo"],
+          position: { x: 600, y: 300 }
+        }
+      }
+    },
+    {
+      name: "Support Ticket Flow",
+      description: "Customer support ticket routing workflow",
+      category: "Support",
+      startNode: "welcome",
+      tags: ["support", "tickets", "routing"],
+      nodes: {
+        welcome: {
+          id: "welcome",
+          title: "Welcome",
+          type: "start",
+          message: "How can I help you with your support request?",
+          connections: ["technical", "billing", "general"],
+          position: { x: 400, y: 100 }
+        },
+        technical: {
+          id: "technical",
+          title: "Technical Issue",
+          type: "category",
+          message: "Let me connect you with technical support...",
+          connections: ["escalate"],
+          position: { x: 200, y: 300 }
+        },
+        billing: {
+          id: "billing",
+          title: "Billing Question",
+          type: "category",
+          message: "Let me help with your billing inquiry...",
+          connections: ["collect_info"],
+          position: { x: 400, y: 300 }
+        },
+        general: {
+          id: "general",
+          title: "General Question",
+          type: "category",
+          message: "I'd be happy to help with your question...",
+          connections: ["collect_info"],
+          position: { x: 600, y: 300 }
+        },
+        escalate: {
+          id: "escalate",
+          title: "Escalate",
+          type: "action",
+          message: "Creating ticket for technical team...",
+          connections: [],
+          position: { x: 200, y: 500 }
+        },
+        collect_info: {
+          id: "collect_info",
+          title: "Collect Information",
+          type: "action",
+          message: "Please provide more details...",
+          connections: [],
+          position: { x: 500, y: 500 }
+        }
+      }
+    },
+    {
+      name: "Lead Qualification Flow",
+      description: "Qualify and route sales leads automatically",
+      category: "Sales",
+      startNode: "intro",
+      tags: ["sales", "leads", "qualification"],
+      nodes: {
+        intro: {
+          id: "intro",
+          title: "Introduction",
+          type: "start",
+          message: "Thanks for your interest! Let me learn more about your needs.",
+          connections: ["company_size"],
+          position: { x: 400, y: 100 }
+        },
+        company_size: {
+          id: "company_size",
+          title: "Company Size",
+          type: "condition",
+          message: "How many students does your school have?",
+          connections: ["small_school", "large_school"],
+          position: { x: 400, y: 250 },
+          conditions: [
+            { field: "students", operator: "less", value: "500" }
+          ]
+        },
+        small_school: {
+          id: "small_school",
+          title: "Small School",
+          type: "category",
+          message: "Perfect! Our basic package would be ideal for you.",
+          connections: ["schedule_demo"],
+          position: { x: 200, y: 400 }
+        },
+        large_school: {
+          id: "large_school",
+          title: "Large School",
+          type: "category",
+          message: "Great! You'll need our enterprise solution.",
+          connections: ["schedule_demo"],
+          position: { x: 600, y: 400 }
+        },
+        schedule_demo: {
+          id: "schedule_demo",
+          title: "Schedule Demo",
+          type: "action",
+          message: "Let's schedule a personalized demo for you!",
+          connections: [],
+          position: { x: 400, y: 550 },
+          metadata: { collectContact: true }
+        }
+      }
+    }
+  ];
+  return templates;
+}
+async function validateWorkflow(workflow) {
+  const errors = [];
+  const warnings = [];
+  if (!workflow.nodes[workflow.startNode]) {
+    errors.push(`Start node "${workflow.startNode}" not found`);
+  }
+  const reachableNodes = /* @__PURE__ */ new Set();
+  const visitNode = (nodeId) => {
+    if (reachableNodes.has(nodeId)) return;
+    reachableNodes.add(nodeId);
+    const node = workflow.nodes[nodeId];
+    if (node) {
+      node.connections.forEach(visitNode);
+    }
+  };
+  visitNode(workflow.startNode);
+  Object.keys(workflow.nodes).forEach((nodeId) => {
+    if (!reachableNodes.has(nodeId) && nodeId !== workflow.startNode) {
+      warnings.push(`Node "${nodeId}" is unreachable`);
+    }
+  });
+  Object.entries(workflow.nodes).forEach(([nodeId, node]) => {
+    node.connections.forEach((connectionId) => {
+      if (!workflow.nodes[connectionId]) {
+        errors.push(`Node "${nodeId}" has invalid connection to "${connectionId}"`);
+      }
+    });
+  });
+  const visited = /* @__PURE__ */ new Set();
+  const recursionStack = /* @__PURE__ */ new Set();
+  const hasCycle = (nodeId) => {
+    if (recursionStack.has(nodeId)) return true;
+    if (visited.has(nodeId)) return false;
+    visited.add(nodeId);
+    recursionStack.add(nodeId);
+    const node = workflow.nodes[nodeId];
+    if (node) {
+      for (const connectionId of node.connections) {
+        if (hasCycle(connectionId)) return true;
+      }
+    }
+    recursionStack.delete(nodeId);
+    return false;
+  };
+  if (hasCycle(workflow.startNode)) {
+    warnings.push("Workflow contains cycles which may cause infinite loops");
+  }
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+async function testWorkflow(workflowId, testInput) {
+  const workflow = await getWorkflowById(workflowId);
+  if (!workflow) {
+    return { success: false, steps: [], error: "Workflow not found" };
+  }
+  const validation = await validateWorkflow(workflow);
+  if (!validation.isValid) {
+    return {
+      success: false,
+      steps: [],
+      error: `Workflow validation failed: ${validation.errors.join(", ")}`
+    };
+  }
+  const steps = [];
+  let currentNodeId = testInput.startNode || workflow.startNode;
+  const visited = /* @__PURE__ */ new Set();
+  const maxSteps = 50;
+  while (currentNodeId && steps.length < maxSteps && !visited.has(currentNodeId)) {
+    visited.add(currentNodeId);
+    const node = workflow.nodes[currentNodeId];
+    if (!node) break;
+    steps.push({
+      nodeId: currentNodeId,
+      nodeTitle: node.title,
+      message: node.message,
+      nextOptions: node.connections.map((id) => workflow.nodes[id]?.title || id)
+    });
+    currentNodeId = node.connections[0] || "";
+  }
+  return { success: true, steps };
+}
+
 // server/routes.ts
 var mongoUrl2 = process.env.MONGO_URL;
-var dbName2 = "test";
-var collectionName2 = "MChat";
-var mongoClient2 = null;
-async function getMongoCollection2() {
-  if (!mongoClient2) {
-    mongoClient2 = new MongoClient4(mongoUrl2);
-    await mongoClient2.connect();
-  }
-  return mongoClient2.db(dbName2).collection(collectionName2);
-}
 async function registerRoutes(app2) {
-  const mkbCollectionName = "MKB";
-  let mkbClient = null;
-  async function getMkbCollection() {
-    if (!mkbClient) {
-      mkbClient = new MongoClient4(mongoUrl2);
-      await mkbClient.connect();
-    }
-    return mkbClient.db(dbName2).collection(mkbCollectionName);
-  }
   app2.get("/api/kb/articles", async (req, res) => {
     try {
-      const col = await getMkbCollection();
+      const col = await database_default.getKnowledgeBaseCollection();
       const articles = await col.find({}).sort({ lastUpdated: -1 }).toArray();
       res.json({ articles });
     } catch (err) {
@@ -242,7 +599,7 @@ async function registerRoutes(app2) {
         lastUpdated: now,
         wordCount: content.trim().split(/\s+/).length
       };
-      const col = await getMkbCollection();
+      const col = await database_default.getKnowledgeBaseCollection();
       const result = await col.insertOne(article);
       res.json({ article: { ...article, _id: result.insertedId } });
     } catch (err) {
@@ -257,7 +614,7 @@ async function registerRoutes(app2) {
         return res.status(400).json({ error: "Missing required fields" });
       }
       const now = /* @__PURE__ */ new Date();
-      const col = await getMkbCollection();
+      const col = await database_default.getKnowledgeBaseCollection();
       const result = await col.updateOne(
         { _id: new (__require("mongodb")).ObjectId(id) },
         {
@@ -282,7 +639,7 @@ async function registerRoutes(app2) {
   app2.delete("/api/kb/articles/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const col = await getMkbCollection();
+      const col = await database_default.getKnowledgeBaseCollection();
       const result = await col.deleteOne({ _id: new (__require("mongodb")).ObjectId(id) });
       if (result.deletedCount === 0) {
         return res.status(404).json({ error: "Article not found" });
@@ -294,7 +651,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/kb/raw", async (req, res) => {
     try {
-      const col = await getMkbCollection();
+      const col = await database_default.getKnowledgeBaseCollection();
       const doc = await col.findOne({});
       if (!doc) return res.json({});
       const { _id, ...fields } = doc;
@@ -309,7 +666,7 @@ async function registerRoutes(app2) {
       if (keys.length !== 1) return res.status(400).json({ error: "Request body must have exactly one field" });
       const field = keys[0];
       const value = req.body[field];
-      const col = await getMkbCollection();
+      const col = await database_default.getKnowledgeBaseCollection();
       let doc = await col.findOne({});
       if (!doc) {
         await col.insertOne({});
@@ -329,7 +686,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/chat/all", async (req, res) => {
     try {
-      const col = await getMongoCollection2();
+      const col = await database_default.getChatCollection();
       const messages = await col.find({}).sort({ sessionId: 1, timestamp: 1 }).toArray();
       res.json({ messages });
     } catch (err) {
@@ -381,31 +738,23 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/register-user", async (req, res) => {
     console.log("Received registration:", req.body);
-    const { name, phone } = req.body;
-    if (!name || !phone) return res.status(400).json({ error: "Missing fields" });
+    const { name, phone, schoolName, studentCount } = req.body;
+    if (!name || !phone || !schoolName || !studentCount) return res.status(400).json({ error: "Missing fields" });
     try {
-      const response = await fetch("https://script.google.com/macros/s/AKfycbyCAUSV1HesBEyrathJGJJoq04QIjKrY2QOIe6GafphZCdZvrnq1JtwihrekHW2RATUCw/exec", {
+      const response = await fetch("https://script.google.com/macros/s/AKfycbx4majGs1lrc9dsON_f7vhniSAuothoNh7DLclnqI3XjuRSuffW4zyEkqItIt0EpIqGuw/exec", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone })
+        body: JSON.stringify({ name, phone, schoolName, studentCount })
       });
       const text = await response.text();
       if (response.ok) {
-        const csvLine = `"${(/* @__PURE__ */ new Date()).toISOString()}","${name.replace(/"/g, '""')}","${phone.replace(/"/g, '""')}"
-`;
-        const filePath = path.join(__dirname, "..", "registrations.csv");
-        fs.appendFile(filePath, csvLine, (err) => {
-          if (err) console.error("Failed to save to CSV:", err);
-        });
-        return res.json({ success: true, text });
+        return res.json({ success: true });
       } else {
-        return res.status(500).json({ error: "Failed to register to Google Sheets", text });
+        return res.status(500).json({ error: "Failed to register" });
       }
     } catch (err) {
-      return res.status(500).json({
-        error: "Proxy error",
-        details: err instanceof Error ? err.message : String(err)
-      });
+      console.error("Registration error:", err);
+      return res.status(500).json({ error: "Failed to register" });
     }
   });
   app2.get("/api/chat/sessions", async (req, res) => {
@@ -417,7 +766,7 @@ async function registerRoutes(app2) {
       const toDate = req.query.toDate;
       const sortBy = req.query.sortBy || "Newest First";
       const searchId = req.query.searchId;
-      const col = await getMongoCollection2();
+      const col = await database_default.getChatCollection();
       const matchConditions = {};
       if (fromDate || toDate) {
         matchConditions.timestamp = {};
@@ -471,7 +820,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/dashboard/stats", async (req, res) => {
     try {
-      const col = await getMongoCollection2();
+      const col = await database_default.getChatCollection();
       const totalMessages = await col.countDocuments({});
       const registrations = await col.countDocuments({
         content: { $regex: /Register for the Demo/i }
@@ -604,7 +953,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/dashboard/registrations", async (req, res) => {
     try {
-      const col = await getMongoCollection2();
+      const col = await database_default.getChatCollection();
       const type = req.query.type || "daily";
       let groupId;
       if (type === "monthly") {
@@ -629,7 +978,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/chat/usage", async (req, res) => {
     try {
-      const col = await getMongoCollection2();
+      const col = await database_default.getChatCollection();
       const type = req.query.type || "daily";
       let groupId;
       if (type === "monthly") groupId = { $dateToString: { format: "%Y-%m", date: "$timestamp" } };
@@ -647,7 +996,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/chat/usage/hourly", async (req, res) => {
     try {
-      const col = await getMongoCollection2();
+      const col = await database_default.getChatCollection();
       const date = req.query.date;
       if (!date) return res.status(400).json({ error: "Missing date param" });
       const start = /* @__PURE__ */ new Date(date + "T00:00:00.000Z");
@@ -1040,41 +1389,177 @@ async function registerRoutes(app2) {
     })();
     `);
   });
+  app2.get("/api/workflows", async (req, res) => {
+    try {
+      const options = {};
+      if (req.query.active === "true") options.isActive = true;
+      if (req.query.active === "false") options.isActive = false;
+      if (req.query.tags) options.tags = req.query.tags.split(",");
+      if (req.query.category) options.category = req.query.category;
+      const workflows = await getAllWorkflows(options);
+      res.json({ workflows });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to fetch workflows",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.get("/api/workflows/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const workflow = await getWorkflowById(id);
+      if (!workflow) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+      res.json({ workflow });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to fetch workflow",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.post("/api/workflows", async (req, res) => {
+    try {
+      const workflowData = req.body;
+      if (!workflowData.name || !workflowData.nodes || !workflowData.startNode) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const workflow = await createWorkflow(workflowData);
+      res.status(201).json({ workflow });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to create workflow",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.put("/api/workflows/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const success = await updateWorkflow(id, updates);
+      if (!success) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+      const updatedWorkflow = await getWorkflowById(id);
+      res.json({ workflow: updatedWorkflow });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to update workflow",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.delete("/api/workflows/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await deleteWorkflow(id);
+      if (!success) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to delete workflow",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.post("/api/workflows/:id/duplicate", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: "New workflow name is required" });
+      }
+      const duplicatedWorkflow = await duplicateWorkflow(id, name);
+      if (!duplicatedWorkflow) {
+        return res.status(404).json({ error: "Workflow not found" });
+      }
+      res.status(201).json({ workflow: duplicatedWorkflow });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to duplicate workflow",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.get("/api/workflow-templates", async (req, res) => {
+    try {
+      const templates = await getWorkflowTemplates();
+      res.json({ templates });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to fetch workflow templates",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.post("/api/workflows/validate", async (req, res) => {
+    try {
+      const workflowData = req.body;
+      if (!workflowData.nodes || !workflowData.startNode) {
+        return res.status(400).json({ error: "Invalid workflow data" });
+      }
+      const validation = await validateWorkflow(workflowData);
+      res.json(validation);
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to validate workflow",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  app2.post("/api/workflows/:id/test", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const testInput = req.body;
+      const testResult = await testWorkflow(id, testInput);
+      res.json(testResult);
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to test workflow",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
   const httpServer = createServer(app2);
   return httpServer;
 }
 
 // server/vite.ts
 import express from "express";
-import fs2 from "fs";
-import path3 from "path";
+import fs from "fs";
+import path2 from "path";
 import { createServer as createViteServer, createLogger } from "vite";
 
 // vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path2 from "path";
+import path from "path";
 import { fileURLToPath } from "url";
 var __filename = fileURLToPath(import.meta.url);
-var __dirname2 = path2.dirname(__filename);
+var __dirname = path.dirname(__filename);
 var vite_config_default = defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path2.resolve(__dirname2, "client", "src"),
-      "@shared": path2.resolve(__dirname2, "shared"),
-      "@assets": path2.resolve(__dirname2, "attached_assets")
+      "@": path.resolve(__dirname, "client", "src"),
+      "@shared": path.resolve(__dirname, "shared"),
+      "@assets": path.resolve(__dirname, "attached_assets")
     }
   },
-  root: path2.resolve(__dirname2, "client"),
+  root: path.resolve(__dirname, "client"),
   build: {
-    outDir: path2.resolve(__dirname2, "dist"),
+    outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: path2.resolve(__dirname2, "client/index.html"),
-        widget: path2.resolve(__dirname2, "client/widget.html"),
-        embed: path2.resolve(__dirname2, "client/embed.html")
+        main: path.resolve(__dirname, "client/index.html"),
+        widget: path.resolve(__dirname, "client/widget.html"),
+        embed: path.resolve(__dirname, "client/embed.html")
       },
       output: {
         manualChunks: {
@@ -1128,13 +1613,13 @@ async function setupVite(app2, server) {
   app2.use("*", async (req, res, next) => {
     const url = req.originalUrl;
     try {
-      const clientTemplate = path3.resolve(
+      const clientTemplate = path2.resolve(
         import.meta.dirname,
         "..",
         "client",
         "index.html"
       );
-      let template = await fs2.promises.readFile(clientTemplate, "utf-8");
+      let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid2()}"`
@@ -1148,15 +1633,15 @@ async function setupVite(app2, server) {
   });
 }
 function serveStatic(app2) {
-  const distPath = path3.resolve(import.meta.dirname, "..");
-  if (!fs2.existsSync(distPath)) {
+  const distPath = path2.resolve(import.meta.dirname, "..");
+  if (!fs.existsSync(distPath)) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`
     );
   }
   app2.use(express.static(distPath));
   app2.use("*", (_req, res) => {
-    res.sendFile(path3.resolve(distPath, "index.html"));
+    res.sendFile(path2.resolve(distPath, "index.html"));
   });
 }
 
@@ -1176,7 +1661,7 @@ app.use(express2.json());
 app.use(express2.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   const start = Date.now();
-  const path4 = req.path;
+  const path3 = req.path;
   let capturedJsonResponse = void 0;
   const originalResJson = res.json;
   res.json = function(bodyJson, ...args) {
@@ -1185,8 +1670,8 @@ app.use((req, res, next) => {
   };
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path4.startsWith("/api")) {
-      let logLine = `${req.method} ${path4} ${res.statusCode} in ${duration}ms`;
+    if (path3.startsWith("/api")) {
+      let logLine = `${req.method} ${path3} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }

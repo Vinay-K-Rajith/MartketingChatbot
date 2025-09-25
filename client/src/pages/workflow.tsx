@@ -1,453 +1,415 @@
-import { useState, useRef, useEffect, MouseEvent } from 'react';
+
+import { useState, useRef, useEffect, MouseEvent, useCallback } from 'react';
+import {
+  apiListWorkflows,
+  apiGetWorkflow,
+  apiCreateWorkflow,
+  apiUpdateWorkflow,
+  apiDeleteWorkflow,
+  apiGetWorkflowTemplates,
+  apiValidateWorkflow,
+  apiTestWorkflow,
+  WorkflowAPIModel,
+  WorkflowAPINode
+} from '../lib/workflow';
+
+type NodeType = 'start' | 'category' | 'action' | 'module' | 'condition' | 'response';
 
 const EntabWorkflowBuilder = () => {
+  // --- STATE MANAGEMENT ---
+  // Data state
+  const [workflows, setWorkflows] = useState<WorkflowAPIModel[]>([]);
+  const [currentWorkflow, setCurrentWorkflow] = useState<WorkflowAPIModel | null>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [nodes, setNodes] = useState<Record<string, WorkflowAPINode>>({});
+  const [editingNode, setEditingNode] = useState<WorkflowAPINode | null>(null);
 
-  type NodeType = 'start' | 'category' | 'action' | 'module';
-  interface WorkflowNode {
-    id: string;
-    title: string;
-    type: NodeType;
-    message: string;
-    connections: string[];
-    position: { x: number; y: number };
-  }
-
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'visual' | 'tree'>('visual');
+  // UI state
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState<'templates' | 'workflows' | 'new' | 'test' | 'validation' | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
-  const canvasRef = useRef<HTMLDivElement | null>(null);
 
-  // Sample workflow data based on the provided structure
-  const workflowNodes: Record<string, WorkflowNode> = {
-    mainMenu: {
-      id: 'mainMenu',
-      title: 'Main Menu',
-      type: 'start',
-      message: 'Why Choose Entab? - 20+ years of expertise, 1,500+ schools served',
-      connections: ['schoolERP', 'lms', 'digitalContent', 'allProducts'],
-      position: { x: 400, y: 100 }
-    },
-    schoolERP: {
-      id: 'schoolERP',
-      title: 'School ERP',
-      type: 'category',
-      message: 'Enterprise-grade solution for school operations',
-      connections: ['schoolERPFeatures', 'schoolERPModules', 'scheduleDemo'],
-      position: { x: 200, y: 300 }
-    },
-    lms: {
-      id: 'lms',
-      title: 'LMS',
-      type: 'category',
-      message: 'Learning Management System for digital learning',
-      connections: ['lmsModules', 'lmsFeatures', 'scheduleDemo'],
-      position: { x: 400, y: 300 }
-    },
-    digitalContent: {
-      id: 'digitalContent',
-      title: 'Digital Content',
-      type: 'category',
-      message: 'Rich multimedia resources for enhanced learning',
-      connections: ['dcContentTypes', 'dcFeatures', 'scheduleDemo'],
-      position: { x: 600, y: 300 }
-    },
-    scheduleDemo: {
-      id: 'scheduleDemo',
-      title: 'Schedule Demo',
-      type: 'action',
-      message: 'Book your free demo session',
-      connections: [],
-      position: { x: 400, y: 500 }
-    }
-  };
+  // Test and validation results
+  const [validationResults, setValidationResults] = useState<any>(null);
+  const [testResults, setTestResults] = useState<any>(null);
 
-  const [nodes, setNodes] = useState<Record<string, WorkflowNode>>(workflowNodes);
+  // Drag and drop state
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLDivElement | null>(null);
 
-  const getNodeColor = (type: NodeType) => {
-    switch (type) {
-      case 'start': return 'from-green-400 to-green-600';
-      case 'category': return 'from-blue-400 to-blue-600';
-      case 'action': return 'from-purple-400 to-purple-600';
-      case 'module': return 'from-indigo-400 to-indigo-600';
-      default: return 'from-gray-400 to-gray-600';
+  // --- API & DATA FETCHING ---
+  const loadWorkflows = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await apiListWorkflows();
+      setWorkflows(response.workflows || []);
+    } catch (error) {
+      console.error('Failed to load workflows:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      const response = await apiGetWorkflowTemplates();
+      setTemplates(response.templates || []);
+    } catch (error) {
+      console.error('Failed to load templates:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWorkflows();
+    loadTemplates();
+  }, [loadWorkflows, loadTemplates]);
+
+  // --- WORKFLOW ACTIONS ---
+  const handleSelectWorkflow = async (workflowId: string) => {
+    try {
+      setIsLoading(true);
+      setShowModal(null);
+      const response = await apiGetWorkflow(workflowId);
+      setCurrentWorkflow(response.workflow);
+      setNodes(response.workflow.nodes || {});
+    } catch (error) {
+      console.error('Failed to load workflow:', error);
+      alert('Error loading workflow.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleNodeClick = (nodeId: string) => {
-    setSelectedNode(nodeId);
+  const handleCreateWorkflow = async (name: string, description: string, template?: any) => {
+    const newWorkflowData: Omit<WorkflowAPIModel, '_id' | 'createdAt' | 'updatedAt'> = {
+      name,
+      description,
+      version: '1.0.0',
+      isActive: false,
+      nodes: template ? template.nodes : {
+        'start': { id: 'start', title: 'Start', type: 'start', message: 'Welcome!', connections: [], position: { x: 100, y: 100 } }
+      },
+      startNode: template ? template.startNode : 'start',
+      tags: template ? template.tags : [],
+    };
+
+    try {
+      setIsSaving(true);
+      const response = await apiCreateWorkflow(newWorkflowData);
+      setWorkflows(prev => [response.workflow, ...prev]);
+      handleSelectWorkflow(response.workflow._id!);
+      setShowModal(null);
+    } catch (error) {
+      console.error('Failed to create workflow:', error);
+      alert('Error creating workflow.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleNodeDragStart = (e: React.MouseEvent<HTMLDivElement>, nodeId: string) => {
+  const handleSaveChanges = async () => {
+    if (!currentWorkflow) return;
+    try {
+      setIsSaving(true);
+      const updatedData = { ...currentWorkflow, nodes };
+      const response = await apiUpdateWorkflow(currentWorkflow._id!, updatedData);
+      setCurrentWorkflow(response.workflow);
+      setWorkflows(prev => prev.map(w => w._id === response.workflow._id ? response.workflow : w));
+      alert('Workflow saved!');
+    } catch (error) {
+      console.error('Failed to save workflow:', error);
+      alert('Error saving workflow.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  
+  const handleValidateWorkflow = async () => {
+      if (!currentWorkflow) return;
+      const response = await apiValidateWorkflow(currentWorkflow);
+      setValidationResults(response);
+      setShowModal('validation');
+  }
+  
+  const handleTestWorkflow = async () => {
+      if (!currentWorkflow) return;
+      const response = await apiTestWorkflow(currentWorkflow._id!, {});
+      setTestResults(response);
+      setShowModal('test');
+  }
+
+  // --- NODE ACTIONS ---
+  const handleAddNode = (type: NodeType) => {
+    if (!currentWorkflow) return;
+    const newNodeId = `node_${Date.now()}`;
+    const newNode: WorkflowAPINode = {
+      id: newNodeId,
+      title: `New ${type}`,
+      type: type,
+      message: '',
+      connections: [],
+      position: { x: 200, y: 200 },
+    };
+    setNodes(prev => ({ ...prev, [newNodeId]: newNode }));
+  };
+
+  const handleUpdateNode = (nodeId: string, updatedProps: Partial<WorkflowAPINode>) => {
+    setNodes(prev => ({
+      ...prev,
+      [nodeId]: { ...prev[nodeId], ...updatedProps }
+    }));
+  };
+  
+  const handleDeleteNode = (nodeId: string) => {
+      if (window.confirm("Are you sure?")) {
+          const newNodes = { ...nodes };
+          delete newNodes[nodeId];
+          
+          // Remove connections pointing to the deleted node
+          Object.keys(newNodes).forEach(key => {
+              newNodes[key].connections = newNodes[key].connections.filter(c => c !== nodeId);
+          });
+          
+          setNodes(newNodes);
+          if(selectedNodeId === nodeId) setSelectedNodeId(null);
+      }
+  }
+  
+  // --- DRAG AND DROP HANDLERS ---
+  const onNodeDragStart = (e: MouseEvent<HTMLDivElement>, nodeId: string) => {
     e.preventDefault();
     const node = nodes[nodeId];
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !node) return;
     const canvasRect = canvasRef.current.getBoundingClientRect();
+    const scale = zoomLevel / 100;
+    
     setDraggedNode(nodeId);
     setDragOffset({
-      x: e.clientX - canvasRect.left - node.position.x * (zoomLevel / 100),
-      y: e.clientY - canvasRect.top - node.position.y * (zoomLevel / 100)
+      x: e.clientX - canvasRect.left - node.position.x * scale,
+      y: e.clientY - canvasRect.top - node.position.y * scale
     });
   };
 
-  const handleNodeDrag = (e: React.MouseEvent<HTMLDivElement>) => {
+  const onNodeDrag = (e: MouseEvent<HTMLDivElement>) => {
     if (!draggedNode || !canvasRef.current) return;
     e.preventDefault();
     const rect = canvasRef.current.getBoundingClientRect();
     const scale = zoomLevel / 100;
     const x = (e.clientX - rect.left - dragOffset.x) / scale;
     const y = (e.clientY - rect.top - dragOffset.y) / scale;
-    setNodes(prev => ({
-      ...prev,
-      [draggedNode]: {
-        ...prev[draggedNode],
-        position: {
-          x: Math.max(0, Math.min(800, x)),
-          y: Math.max(0, Math.min(600, y))
-        }
-      }
-    }));
+    
+    handleUpdateNode(draggedNode, { position: { x, y } });
   };
 
-  const handleNodeDragEnd = () => {
+  const onNodeDragEnd = () => {
     setDraggedNode(null);
-    setDragOffset({ x: 0, y: 0 });
   };
 
-  const renderVisualWorkflow = () => (
-    <div className="relative w-full h-full bg-slate-50 rounded-xl overflow-hidden">
-      <div 
-        ref={canvasRef}
-        className="relative w-full h-full"
-        style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: '0 0' }}
-        onMouseMove={handleNodeDrag}
-        onMouseUp={handleNodeDragEnd}
-      >
-        {/* Connection Lines */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-          {Object.entries(nodes).map(([nodeId, node]) =>
-            node.connections.map(connectionId => {
-              const targetNode = nodes[connectionId];
-              if (!targetNode) return null;
-              
-              return (
-                <line
-                  key={`${nodeId}-${connectionId}`}
-                  x1={node.position.x + 100}
-                  y1={node.position.y + 40}
-                  x2={targetNode.position.x + 100}
-                  y2={targetNode.position.y + 40}
-                  stroke="#e2e8f0"
-                  strokeWidth="2"
-                  strokeDasharray="5,5"
-                />
-              );
-            })
-          )}
-        </svg>
+  // --- RENDER METHODS ---
+  const getNodeColor = (type: NodeType) => {
+    const colors = {
+      start: 'from-green-500 to-green-700',
+      category: 'from-blue-500 to-blue-700',
+      action: 'from-purple-500 to-purple-700',
+      condition: 'from-yellow-500 to-yellow-700',
+      response: 'from-pink-500 to-pink-700',
+      module: 'from-indigo-500 to-indigo-700',
+    };
+    return colors[type] || 'from-gray-500 to-gray-700';
+  };
 
-        {/* Workflow Nodes */}
-        {Object.entries(nodes).map(([nodeId, node]) => (
-          <div
-            key={nodeId}
-            className={`absolute w-48 bg-gradient-to-r ${getNodeColor(node.type)} p-4 rounded-xl shadow-lg cursor-move transition-all duration-300 hover:shadow-xl ${
-              selectedNode === nodeId ? 'ring-4 ring-white ring-opacity-50 scale-105' : ''
-            }`}
-            style={{ 
-              left: node.position.x, 
-              top: node.position.y,
-              zIndex: 2
-            }}
-            onClick={() => handleNodeClick(nodeId)}
-            onMouseDown={(e) => handleNodeDragStart(e, nodeId)}
-            draggable={false}
-          >
-            <div className="text-white">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="font-semibold text-sm">{node.title}</h4>
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-white/50 rounded-full"></div>
-                  <div className="w-2 h-2 bg-white/30 rounded-full"></div>
-                  <div className="w-2 h-2 bg-white/20 rounded-full"></div>
-                </div>
-              </div>
-              <p className="text-xs text-white/80 mb-3 line-clamp-2">{node.message}</p>
-              <div className="flex justify-between items-center">
-                <span className="text-xs bg-white/20 px-2 py-1 rounded-full">{node.type}</span>
-                <span className="text-xs">{node.connections.length} links</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderTreeView = () => (
-    <div className="bg-white rounded-xl p-6 h-full overflow-auto">
-      <div className="space-y-4">
-        {Object.entries(nodes).map(([nodeId, node]) => (
-          <div
-            key={nodeId}
-            className={`p-4 border-2 border-slate-200 rounded-xl hover:border-indigo-300 cursor-pointer transition-all duration-200 ${
-              selectedNode === nodeId ? 'border-indigo-500 bg-indigo-50' : ''
-            }`}
-            onClick={() => handleNodeClick(nodeId)}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-2">
-                  <h4 className="font-semibold text-slate-900">{node.title}</h4>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    node.type === 'start' ? 'bg-green-100 text-green-700' :
-                    node.type === 'category' ? 'bg-blue-100 text-blue-700' :
-                    node.type === 'action' ? 'bg-purple-100 text-purple-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {node.type}
-                  </span>
-                </div>
-                <p className="text-slate-600 text-sm mb-3">{node.message}</p>
-                {node.connections.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {node.connections.map(connectionId => (
-                      <span
-                        key={connectionId}
-                        className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md"
-                      >
-                        → {nodes[connectionId]?.title || connectionId}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+  const renderNode = (node: WorkflowAPINode) => (
+    <div
+      key={node.id}
+      className={`absolute w-48 bg-gradient-to-br p-3 rounded-lg shadow-lg cursor-pointer text-white transition-transform duration-200 ${getNodeColor(node.type)} ${selectedNodeId === node.id ? 'ring-4 ring-white/50 scale-105' : ''}`}
+      style={{ left: node.position.x, top: node.position.y, zIndex: 2 }}
+      onMouseDown={(e) => onNodeDragStart(e, node.id)}
+      onClick={() => setSelectedNodeId(node.id)}
+    >
+      <h4 className="font-bold text-sm truncate">{node.title}</h4>
+      <p className="text-xs text-white/80 line-clamp-2">{node.message || 'No message'}</p>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-500 to-purple-600">
-      <div className="flex min-h-screen">
-        {/* Main Content Only - No Sidebar */}
-        <div className="flex-1 bg-slate-50">
-          {/* Header */}
-          <div className="bg-white p-10 border-b border-slate-200 shadow-sm">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-4xl font-bold text-slate-900 mb-2">Workflow Builder</h2>
-                <p className="text-slate-600 text-lg">Design and manage chatbot conversation flows with visual workflow editor</p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search workflows..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-80 p-4 pl-12 border-2 border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:border-indigo-500 focus:bg-white focus:shadow-lg focus:shadow-indigo-500/10 transition-all duration-300"
-                  />
-                  <svg className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-                <button className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl text-sm font-semibold hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/30 transition-all duration-300">
-                  + New Workflow
-                </button>
-              </div>
-            </div>
+    <div className="w-full h-full bg-slate-100 flex flex-col">
+      {/* Header */}
+      <header className="bg-white p-4 border-b flex justify-between items-center shadow-sm">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Workflow Builder</h1>
+          <p className="text-sm text-slate-500">{currentWorkflow ? `Editing: ${currentWorkflow.name}` : "No workflow selected"}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowModal('templates')} className="btn-secondary">Load Template</button>
+          <button onClick={() => setShowModal('workflows')} className="btn-secondary">Load Workflow</button>
+          <button onClick={() => setShowModal('new')} className="btn-primary">+ New Workflow</button>
+          {currentWorkflow && (
+            <button onClick={handleSaveChanges} disabled={isSaving} className="btn-success">
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
+        </div>
+      </header>
 
-            {/* Toolbar */}
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-4">
-                <div className="flex bg-slate-100 rounded-xl p-1">
-                  <button
-                    onClick={() => setViewMode('visual')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      viewMode === 'visual' 
-                        ? 'bg-white text-indigo-600 shadow-sm' 
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Visual Flow
-                  </button>
-                  <button
-                    onClick={() => setViewMode('tree')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      viewMode === 'tree' 
-                        ? 'bg-white text-indigo-600 shadow-sm' 
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Tree View
-                  </button>
-                </div>
-
-                <div className="flex items-center space-x-2 text-sm text-slate-600">
-                  <span>Nodes: {Object.keys(nodes).length}</span>
-                  <div className="w-1 h-1 bg-slate-400 rounded-full"></div>
-                  <span>Active: {Object.values(nodes).filter(n => n.connections.length > 0).length}</span>
-                </div>
-              </div>
-
-              {viewMode === 'visual' && (
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setZoomLevel(Math.max(50, zoomLevel - 25))}
-                      className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                      </svg>
-                    </button>
-                    <span className="text-sm text-slate-600 min-w-[3rem] text-center">{zoomLevel}%</span>
-                    <button
-                      onClick={() => setZoomLevel(Math.min(200, zoomLevel + 25))}
-                      className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => setZoomLevel(100)}
-                    className="px-3 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
-              )}
-            </div>
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Panel (Node Palette) */}
+        <aside className="w-48 bg-white p-4 border-r overflow-y-auto">
+          <h3 className="font-semibold mb-4">Add Nodes</h3>
+          <div className="grid grid-cols-2 gap-2">
+            {(['start', 'category', 'action', 'condition', 'response', 'module'] as NodeType[]).map(type => (
+              <button key={type} onClick={() => handleAddNode(type)} disabled={!currentWorkflow} className="p-2 rounded-lg bg-slate-100 hover:bg-indigo-100 disabled:opacity-50 text-center">
+                  <span className="text-xs capitalize">{type}</span>
+              </button>
+            ))}
           </div>
+           {currentWorkflow && <div className="mt-4 border-t pt-4">
+               <button onClick={handleValidateWorkflow} className="btn-secondary w-full mb-2">Validate</button>
+               <button onClick={handleTestWorkflow} className="btn-secondary w-full">Test</button>
+           </div>}
+        </aside>
 
-          {/* Main Workflow Area */}
-          <div className="flex h-[calc(100vh-200px)]">
-            {/* Workflow Canvas */}
-            <div className="flex-1 p-6">
-              <div className="h-full border-2 border-dashed border-slate-300 rounded-2xl overflow-hidden">
-                {viewMode === 'visual' ? renderVisualWorkflow() : renderTreeView()}
-              </div>
-            </div>
-
-            {/* Properties Panel */}
-            <div className="w-80 border-l border-slate-200 bg-white p-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                  {selectedNode ? `Edit: ${nodes[selectedNode]?.title}` : 'Workflow Properties'}
-                </h3>
-                
-                {selectedNode ? (
-                  <div className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Node Title</label>
-                      <input
-                        type="text"
-                        value={nodes[selectedNode]?.title || ''}
-                        className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        readOnly
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Node Type</label>
-                      <select className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                        <option value="start">Start Node</option>
-                        <option value="category">Category</option>
-                        <option value="action">Action</option>
-                        <option value="module">Module</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Message</label>
-                      <textarea
-                        rows={4}
-                        value={nodes[selectedNode]?.message || ''}
-                        className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        readOnly
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Connections</label>
-                      <div className="space-y-2">
-                        {nodes[selectedNode]?.connections.map((connectionId, index) => (
-                          <div key={index} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                            <span className="text-sm text-slate-700">{nodes[connectionId]?.title || connectionId}</span>
-                            <button className="text-red-500 hover:text-red-700">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div className="pt-4 border-t border-slate-200">
-                      <button className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors mb-2">
-                        Save Changes
-                      </button>
-                      <button className="w-full px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="text-6xl mb-4">🎯</div>
-                    <h4 className="text-lg font-medium text-slate-900 mb-2">Select a Node</h4>
-                    <p className="text-slate-600 text-sm">
-                      Click on a workflow node to view and edit its properties
-                    </p>
-                  </div>
+        {/* Center Canvas */}
+        <main className="flex-1 bg-slate-200 relative" onMouseMove={onNodeDrag} onMouseUp={onNodeDragEnd}>
+          {isLoading && <div className="loading-overlay">Loading...</div>}
+          {!currentWorkflow && !isLoading && (
+            <div className="flex items-center justify-center h-full text-slate-500">Select or create a workflow to begin.</div>
+          )}
+          <div ref={canvasRef} className="w-full h-full" style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top left' }}>
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+                {Object.values(nodes).flatMap(node =>
+                    node.connections.map(connId => {
+                        const target = nodes[connId];
+                        if(!target) return null;
+                        return <line key={`${node.id}-${connId}`} x1={node.position.x + 96} y1={node.position.y + 30} x2={target.position.x + 96} y2={target.position.y + 30} stroke="#94a3b8" strokeWidth="2" />
+                    })
                 )}
-              </div>
+            </svg>
+            {Object.values(nodes).map(renderNode)}
+          </div>
+        </main>
 
-              {/* Node Palette */}
-              <div className="border-t border-slate-200 pt-6">
-                <h4 className="text-sm font-semibold text-slate-900 mb-3">Add New Nodes</h4>
-                <div className="space-y-2">
-                  {[
-                    { type: 'start', label: 'Start Node', color: 'bg-green-100 text-green-700' },
-                    { type: 'category', label: 'Category', color: 'bg-blue-100 text-blue-700' },
-                    { type: 'action', label: 'Action', color: 'bg-purple-100 text-purple-700' },
-                    { type: 'module', label: 'Module', color: 'bg-indigo-100 text-indigo-700' }
-                  ].map((nodeType) => (
-                    <button
-                      key={nodeType.type}
-                      className={`w-full p-3 rounded-lg text-sm font-medium transition-colors ${nodeType.color} hover:opacity-80`}
-                    >
-                      + {nodeType.label}
-                    </button>
-                  ))}
-                </div>
+        {/* Right Panel (Inspector) */}
+        <aside className="w-80 bg-white p-4 border-l overflow-y-auto">
+          <h3 className="font-semibold mb-4">Inspector</h3>
+          {selectedNodeId && nodes[selectedNodeId] ? (
+            <div className="space-y-4">
+              <div>
+                <label className="label">Title</label>
+                <input type="text" value={nodes[selectedNodeId].title} onChange={(e) => handleUpdateNode(selectedNodeId, { title: e.target.value })} className="input" />
               </div>
+              <div>
+                <label className="label">Type</label>
+                <select value={nodes[selectedNodeId].type} onChange={(e) => handleUpdateNode(selectedNodeId, { type: e.target.value as NodeType })} className="input">
+                    {(['start', 'category', 'action', 'condition', 'response', 'module'] as NodeType[]).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Message</label>
+                <textarea value={nodes[selectedNodeId].message} onChange={(e) => handleUpdateNode(selectedNodeId, { message: e.target.value })} className="input" rows={4}></textarea>
+              </div>
+              <div>
+                <label className="label">Connections (IDs)</label>
+                <input type="text" value={nodes[selectedNodeId].connections.join(',')} onChange={(e) => handleUpdateNode(selectedNodeId, { connections: e.target.value.split(',').map(s => s.trim()) })} className="input" />
+              </div>
+              <button onClick={() => handleDeleteNode(selectedNodeId)} className="btn-danger w-full">Delete Node</button>
             </div>
+          ) : (
+            <div className="text-slate-500 text-sm">Select a node to inspect its properties.</div>
+          )}
+        </aside>
+      </div>
+
+      {/* Modals */}
+      {showModal && (
+        <div className="modal-backdrop">
+          <div className="modal-content">
+            <button onClick={() => setShowModal(null)} className="modal-close-btn">&times;</button>
+            {showModal === 'workflows' && (
+              <div>
+                <h2 className="modal-title">Load Existing Workflow</h2>
+                <ul className="space-y-2">
+                  {workflows.map(wf => <li key={wf._id} onClick={() => handleSelectWorkflow(wf._id!)} className="modal-list-item">{wf.name}</li>)}
+                </ul>
+              </div>
+            )}
+             {showModal === 'templates' && (
+              <div>
+                <h2 className="modal-title">Load from Template</h2>
+                <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target as HTMLFormElement);
+                    const template = templates.find(t => t.name === formData.get('template'));
+                    handleCreateWorkflow(formData.get('name') as string, formData.get('description') as string, template);
+                }}>
+                    <input name="name" placeholder="New Workflow Name" required className="input mb-2"/>
+                    <textarea name="description" placeholder="Description" className="input mb-2"/>
+                    <select name="template" className="input mb-4">
+                        {templates.map(t => <option key={t.name}>{t.name}</option>)}
+                    </select>
+                    <button type="submit" className="btn-primary w-full">Create from Template</button>
+                </form>
+              </div>
+            )}
+             {showModal === 'new' && (
+              <div>
+                <h2 className="modal-title">Create New Workflow</h2>
+                <form onSubmit={(e) => { e.preventDefault(); handleCreateWorkflow(e.currentTarget.workflowName.value, e.currentTarget.description.value); }}>
+                    <input name="workflowName" placeholder="Workflow Name" required className="input mb-2"/>
+                    <textarea name="description" placeholder="Description" className="input mb-4"/>
+                    <button type="submit" className="btn-primary w-full">Create Blank Workflow</button>
+                </form>
+              </div>
+            )}
+            {showModal === 'validation' && validationResults && (
+                <div>
+                    <h2 className="modal-title">Validation Results</h2>
+                    <p className={validationResults.isValid ? 'text-green-600' : 'text-red-600'}>{validationResults.isValid ? 'Validation Passed!' : 'Validation Failed'}</p>
+                    {validationResults.errors.length > 0 && <div><h3>Errors:</h3><ul className="list-disc list-inside text-red-500">{validationResults.errors.map((e:string, i:number) => <li key={i}>{e}</li>)}</ul></div>}
+                    {validationResults.warnings.length > 0 && <div><h3>Warnings:</h3><ul className="list-disc list-inside text-yellow-500">{validationResults.warnings.map((w:string, i:number) => <li key={i}>{w}</li>)}</ul></div>}
+                </div>
+            )}
+            {showModal === 'test' && testResults && (
+                 <div>
+                    <h2 className="modal-title">Test Run Simulation</h2>
+                    {testResults.success ? (
+                        <div className="font-mono text-sm space-y-2">
+                            {testResults.steps.map((step: any, i:number) => <div key={i}>Step {i+1}: Node "{step.nodeTitle}" ({step.nodeId})</div>)}
+                        </div>
+                    ) : <p className="text-red-500">Error: {testResults.error}</p>}
+                </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
+      
+    {/* Basic Global CSS for demo */}
+    <style>{`
+        .btn-primary { padding: 8px 16px; background-color: #4f46e5; color: white; border-radius: 8px; transition: background-color 0.2s; }
+        .btn-primary:hover { background-color: #4338ca; }
+        .btn-secondary { padding: 8px 16px; background-color: #e2e8f0; color: #1e293b; border-radius: 8px; transition: background-color 0.2s; }
+        .btn-secondary:hover { background-color: #cbd5e1; }
+        .btn-success { padding: 8px 16px; background-color: #16a34a; color: white; border-radius: 8px; transition: background-color 0.2s; }
+        .btn-success:hover { background-color: #15803d; }
+        .btn-danger { padding: 8px 16px; background-color: #dc2626; color: white; border-radius: 8px; transition: background-color 0.2s; }
+        .btn-danger:hover { background-color: #b91c1c; }
+        .input { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; }
+        .label { display: block; font-weight: 500; font-size: 0.875rem; margin-bottom: 4px; color: #475569; }
+        .modal-backdrop { position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
+        .modal-content { background-color: white; padding: 24px; border-radius: 12px; width: 100%; max-width: 500px; position: relative; }
+        .modal-close-btn { position: absolute; top: 12px; right: 12px; background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+        .modal-title { font-size: 1.25rem; font-weight: bold; margin-bottom: 16px; }
+        .modal-list-item { padding: 12px; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; }
+        .modal-list-item:hover { background-color: #f1f5f9; }
+        .loading-overlay { position: absolute; inset: 0; background-color: rgba(255,255,255,0.8); display: flex; align-items: center; justify-content: center; z-index: 10; }
+    `}</style>
     </div>
   );
 };
 
 export default EntabWorkflowBuilder;
+
+

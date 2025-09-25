@@ -1,10 +1,4 @@
-import { MongoClient } from 'mongodb';
-
-const MONGO_URL = process.env.MONGO_URL || 'mongodb+srv://vaishakhp11:PiPa7LUEZ5ufQo8z@cluster0.toscmfj.mongodb.net/';
-const DB_NAME = process.env.DB_NAME || 'test';
-const COLLECTION = process.env.CHAT_COLLECTION || 'MChat';
-
-const client = new MongoClient(MONGO_URL);
+import databaseService from './database';
 
 export type ChatMessage = {
   sessionId: string;
@@ -20,8 +14,7 @@ export type ChatMessage = {
  * { sessionId, content, isUser, timestamp, type: 'message' }
  */
 export async function saveChatMessage({ sessionId, content, isUser, timestamp, nodeKey, type }: Omit<ChatMessage, 'timestamp'> & { timestamp?: Date }): Promise<ChatMessage> {
-  await client.connect();
-  const db = client.db(DB_NAME);
+  const collection = await databaseService.getChatCollection();
   const doc: ChatMessage = {
     sessionId,
     content,
@@ -30,7 +23,7 @@ export async function saveChatMessage({ sessionId, content, isUser, timestamp, n
     nodeKey,
     type,
   };
-  await db.collection(COLLECTION).insertOne(doc);
+  await collection.insertOne(doc);
   return doc;
 }
 
@@ -38,9 +31,8 @@ export async function saveChatMessage({ sessionId, content, isUser, timestamp, n
  * Fetches all messages for a session, sorted by timestamp.
  */
 export async function getChatMessagesBySession(sessionId: string): Promise<ChatMessage[]> {
-  await client.connect();
-  const db = client.db(DB_NAME);
-  const messages = await db.collection(COLLECTION)
+  const collection = await databaseService.getChatCollection();
+  const messages = await collection
     .find({ sessionId })
     .sort({ timestamp: 1 })
     .toArray();

@@ -12,38 +12,35 @@ import fs from 'fs';
 import path from 'path';
 import fetch from 'node-fetch';
 import { MongoClient } from 'mongodb';
+import databaseService from './services/database';
 import { saveChatMessage, getChatMessagesBySession } from './services/chat-history';
+import {
+  createWorkflow,
+  getWorkflowById,
+  getWorkflowByName,
+  getAllWorkflows,
+  updateWorkflow,
+  deleteWorkflow,
+  duplicateWorkflow,
+  getWorkflowTemplates,
+  validateWorkflow,
+  testWorkflow
+} from './services/workflow';
 
 const mongoUrl = process.env.MONGO_URL;
 const dbName = 'test';
 const collectionName = 'MChat';
 
-let mongoClient: MongoClient | null = null;
-async function getMongoCollection() {
-  if (!mongoClient) {
-    mongoClient = new MongoClient(mongoUrl!);
-    await mongoClient.connect();
-  }
-  return mongoClient.db(dbName).collection(collectionName);
-}
+// Using centralized database service
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
-  // --- Knowledge Base (MKB) MongoDB Setup ---
-  const mkbCollectionName = 'MKB';
-  let mkbClient: MongoClient | null = null;
-  async function getMkbCollection() {
-    if (!mkbClient) {
-      mkbClient = new MongoClient(mongoUrl!);
-      await mkbClient.connect();
-    }
-    return mkbClient.db(dbName).collection(mkbCollectionName);
-  }
+  // Using centralized database service for MKB
 
   // --- Knowledge Base API (MKB) ---
   app.get('/api/kb/articles', async (req: import('express').Request, res: import('express').Response) => {
     try {
-      const col = await getMkbCollection();
+      const col = await databaseService.getKnowledgeBaseCollection();
       const articles = await col.find({}).sort({ lastUpdated: -1 }).toArray();
       res.json({ articles });
     } catch (err) {
@@ -66,7 +63,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastUpdated: now,
         wordCount: content.trim().split(/\s+/).length
       };
-      const col = await getMkbCollection();
+      const col = await databaseService.getKnowledgeBaseCollection();
       const result = await col.insertOne(article);
       res.json({ article: { ...article, _id: result.insertedId } });
     } catch (err) {
@@ -82,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Missing required fields' });
       }
       const now = new Date();
-      const col = await getMkbCollection();
+      const col = await databaseService.getKnowledgeBaseCollection();
       const result = await col.updateOne(
         { _id: new (require('mongodb').ObjectId)(id) },
         { $set: {
@@ -107,7 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/kb/articles/:id', async (req: import('express').Request, res: import('express').Response) => {
     try {
       const { id } = req.params;
-      const col = await getMkbCollection();
+      const col = await databaseService.getKnowledgeBaseCollection();
       const result = await col.deleteOne({ _id: new (require('mongodb').ObjectId)(id) });
       if (result.deletedCount === 0) {
         return res.status(404).json({ error: 'Article not found' });
@@ -122,7 +119,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GET: fetch all fields from the single MKB document (excluding _id)
   app.get('/api/kb/raw', async (req, res) => {
     try {
-      const col = await getMkbCollection();
+      const col = await databaseService.getKnowledgeBaseCollection();
       // Assume only one document in MKB collection
       const doc = await col.findOne({});
       if (!doc) return res.json({});
@@ -142,7 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (keys.length !== 1) return res.status(400).json({ error: 'Request body must have exactly one field' });
       const field = keys[0];
       const value = req.body[field];
-      const col = await getMkbCollection();
+      const col = await databaseService.getKnowledgeBaseCollection();
       // Find the single MKB doc
       let doc = await col.findOne({});
       if (!doc) {
@@ -168,7 +165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Fetch all chat messages, sorted by sessionId and timestamp
   app.get('/api/chat/all', async (req, res) => {
     try {
-      const col = await getMongoCollection();
+      const col = await databaseService.getChatCollection();
       // Fetch all messages, sort by sessionId and timestamp
       const messages = await col.find({}).sort({ sessionId: 1, timestamp: 1 }).toArray();
       res.json({ messages });
@@ -230,32 +227,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/register-user', async (req, res) => {
     console.log('Received registration:', req.body); // Debug log
-    const { name, phone } = req.body;
-    if (!name || !phone) return res.status(400).json({ error: 'Missing fields' });
-    // Forward to Google Apps Script Web App
+    const { name, phone, schoolName, studentCount } = req.body;
+    if (!name || !phone || !schoolName || !studentCount) return res.status(400).json({ error: 'Missing fields' });
+
     try {
-      const response = await fetch('https://script.google.com/macros/s/AKfycbyCAUSV1HesBEyrathJGJJoq04QIjKrY2QOIe6GafphZCdZvrnq1JtwihrekHW2RATUCw/exec', {
+      const response = await fetch('https://script.google.com/macros/s/AKfycbx4majGs1lrc9dsON_f7vhniSAuothoNh7DLclnqI3XjuRSuffW4zyEkqItIt0EpIqGuw/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone }),
+        body: JSON.stringify({ name, phone, schoolName, studentCount }),
       });
+
       const text = await response.text();
       if (response.ok) {
-        // Optionally, also append to CSV locally
-        const csvLine = `"${new Date().toISOString()}","${name.replace(/"/g, '""')}","${phone.replace(/"/g, '""')}"\n`;
-        const filePath = path.join(__dirname, '..', 'registrations.csv');
-        fs.appendFile(filePath, csvLine, (err) => {
-          if (err) console.error('Failed to save to CSV:', err);
-        });
-        return res.json({ success: true, text });
+        return res.json({ success: true });
       } else {
-        return res.status(500).json({ error: 'Failed to register to Google Sheets', text });
+        return res.status(500).json({ error: 'Failed to register' });
       }
     } catch (err) {
-      return res.status(500).json({
-        error: 'Proxy error',
-        details: err instanceof Error ? err.message : String(err)
-      });
+      console.error('Registration error:', err);
+      return res.status(500).json({ error: 'Failed to register' });
     }
   });
 
@@ -272,7 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sortBy = req.query.sortBy as string || 'Newest First';
       const searchId = req.query.searchId as string;
 
-      const col = await getMongoCollection();
+      const col = await databaseService.getChatCollection();
 
       // Build match conditions for filtering
       const matchConditions: any = {};
@@ -349,7 +339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard: Get dashboard statistics (total messages, registrations, etc.)
   app.get('/api/dashboard/stats', async (req, res) => {
     try {
-      const col = await getMongoCollection();
+      const col = await databaseService.getChatCollection();
       
       // Get total messages count
       const totalMessages = await col.countDocuments({});
@@ -531,7 +521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard: Get registration analytics over time
   app.get('/api/dashboard/registrations', async (req, res) => {
     try {
-      const col = await getMongoCollection();
+      const col = await databaseService.getChatCollection();
       const type = req.query.type || 'daily';
       
       let groupId: any;
@@ -561,7 +551,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard: Usage analytics (daily/weekly/monthly)
   app.get('/api/chat/usage', async (req, res) => {
     try {
-      const col = await getMongoCollection();
+      const col = await databaseService.getChatCollection();
       const type = req.query.type || 'daily';
       let groupId: any;
       if (type === 'monthly') groupId = { $dateToString: { format: '%Y-%m', date: '$timestamp' } };
@@ -581,7 +571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard: Hourly usage for a given date
   app.get('/api/chat/usage/hourly', async (req, res) => {
     try {
-      const col = await getMongoCollection();
+      const col = await databaseService.getChatCollection();
       const date = req.query.date as string;
       if (!date) return res.status(400).json({ error: 'Missing date param' });
       const start = new Date(date + 'T00:00:00.000Z');
@@ -975,6 +965,174 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
     })();
     `);
+  });
+
+  // --- Workflow Builder API Routes ---
+  // Get all workflows
+  app.get('/api/workflows', async (req, res) => {
+    try {
+      const options: any = {};
+      if (req.query.active === 'true') options.isActive = true;
+      if (req.query.active === 'false') options.isActive = false;
+      if (req.query.tags) options.tags = (req.query.tags as string).split(',');
+      if (req.query.category) options.category = req.query.category as string;
+      
+      const workflows = await getAllWorkflows(options);
+      res.json({ workflows });
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to fetch workflows',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Get a workflow by ID
+  app.get('/api/workflows/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const workflow = await getWorkflowById(id);
+      
+      if (!workflow) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      
+      res.json({ workflow });
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to fetch workflow',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Create a new workflow
+  app.post('/api/workflows', async (req, res) => {
+    try {
+      const workflowData = req.body;
+      if (!workflowData.name || !workflowData.nodes || !workflowData.startNode) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+      
+      const workflow = await createWorkflow(workflowData);
+      res.status(201).json({ workflow });
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to create workflow',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Update a workflow
+  app.put('/api/workflows/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      
+      const success = await updateWorkflow(id, updates);
+      if (!success) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      
+      const updatedWorkflow = await getWorkflowById(id);
+      res.json({ workflow: updatedWorkflow });
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to update workflow',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Delete a workflow
+  app.delete('/api/workflows/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await deleteWorkflow(id);
+      
+      if (!success) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to delete workflow',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Duplicate a workflow
+  app.post('/api/workflows/:id/duplicate', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name } = req.body;
+      
+      if (!name) {
+        return res.status(400).json({ error: 'New workflow name is required' });
+      }
+      
+      const duplicatedWorkflow = await duplicateWorkflow(id, name);
+      if (!duplicatedWorkflow) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+      
+      res.status(201).json({ workflow: duplicatedWorkflow });
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to duplicate workflow',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Get workflow templates
+  app.get('/api/workflow-templates', async (req, res) => {
+    try {
+      const templates = await getWorkflowTemplates();
+      res.json({ templates });
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to fetch workflow templates',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Validate a workflow
+  app.post('/api/workflows/validate', async (req, res) => {
+    try {
+      const workflowData = req.body;
+      if (!workflowData.nodes || !workflowData.startNode) {
+        return res.status(400).json({ error: 'Invalid workflow data' });
+      }
+      
+      const validation = await validateWorkflow(workflowData);
+      res.json(validation);
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to validate workflow',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
+  // Test a workflow
+  app.post('/api/workflows/:id/test', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const testInput = req.body;
+      
+      const testResult = await testWorkflow(id, testInput);
+      res.json(testResult);
+    } catch (err) {
+      res.status(500).json({
+        error: 'Failed to test workflow',
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
   });
 
   const httpServer = createServer(app);

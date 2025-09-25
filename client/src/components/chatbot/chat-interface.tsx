@@ -103,8 +103,8 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
   // Chat-based onboarding state
   const [onboardingStep, setOnboardingStep] = useState(
     typeof window !== 'undefined' && !localStorage.getItem('entab_user_registered') ? 0 : null
-  ); // 0: ask name, 1: ask phone, null: done
-  const [userInfo, setUserInfo] = useState({ name: '', phone: '' });
+  ); // 0: ask name, 1: ask phone, 2: ask school name, 3: ask student count, null: done
+  const [userInfo, setUserInfo] = useState({ name: '', phone: '', schoolName: '', studentCount: '' });
   const [submitting, setSubmitting] = useState(false);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -304,15 +304,37 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
         return;
       }
       setUserInfo((u) => ({ ...u, phone: value }));
+      setInputValue('');
+      setOnboardingStep(2);
+    } else if (onboardingStep === 2) {
+      if (!value.trim()) {
+        setOnboardingError('Please enter your school name.');
+        return;
+      }
+      setUserInfo((u) => ({ ...u, schoolName: value }));
+      setInputValue('');
+      setOnboardingStep(3);
+    } else if (onboardingStep === 3) {
+      const studentCount = parseInt(value);
+      if (isNaN(studentCount) || studentCount <= 0) {
+        setOnboardingError('Please enter a valid number of students.');
+        return;
+      }
+      setUserInfo((u) => ({ ...u, studentCount: value }));
       setSubmitting(true);
       try {
         await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: userInfo.name, phone: value }),
+          body: JSON.stringify({
+            name: userInfo.name,
+            phone: userInfo.phone,
+            schoolName: userInfo.schoolName,
+            studentCount: value
+          }),
         });
         localStorage.setItem('entab_user_registered', 'true');
-        setInputValue(''); // Clear input after phone
+        setInputValue('');
         setOnboardingStep(null);
       } catch (err) {
         setOnboardingError(
@@ -428,7 +450,11 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                       content={
                         onboardingStep === 0
                           ? '👋 Welcome! Before we begin, may I know your name?'
-                          : `Thanks, ${userInfo.name || 'there'}! Could you please share your phone number?`
+                          : onboardingStep === 1
+                          ? `Thanks, ${userInfo.name || 'there'}! Could you please share your phone number?`
+                          : onboardingStep === 2
+                          ? `Great! Now, could you please share your school name?`
+                          : `Finally, what's the total number of students in your school?`
                       }
                       isUser={false}
                       timestamp={new Date()}
@@ -443,18 +469,39 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                     >
                       <div className="w-full max-w-md bg-blue-50 border border-blue-100 rounded-xl sm:rounded-2xl shadow-md p-3 sm:p-5 flex flex-col gap-2">
                         <label htmlFor="onboarding-input" className="text-school-blue font-semibold text-sm sm:text-base mb-1">
-                          {onboardingStep === 0 ? 'Your Name' : 'Phone Number'}
+                          {onboardingStep === 0 
+                            ? 'Your Name' 
+                            : onboardingStep === 1 
+                            ? 'Phone Number'
+                            : onboardingStep === 2
+                            ? 'School Name'
+                            : 'Total Students'}
                         </label>
                         <div className="relative flex items-center">
-                          {onboardingStep === 0 ? (
-                            <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-4 h-4 sm:w-5 sm:h-5" />
-                          ) : (
-                            <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-4 h-4 sm:w-5 sm:h-5" />
-                          )}
+                          {(() => {
+                            const iconClass = "absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 w-4 h-4 sm:w-5 sm:h-5";
+                            if (onboardingStep === 0) {
+                              return <UserIcon className={iconClass} />;
+                            } else if (onboardingStep === 1) {
+                              return <PhoneIcon className={iconClass} />;
+                            } else if (onboardingStep === 2) {
+                              return <Building2 className={iconClass} />;
+                            } else {
+                              return <Users className={iconClass} />;
+                            }
+                          })()}
                           <Input
                             id="onboarding-input"
-                            type={onboardingStep === 0 ? 'text' : 'tel'}
-                            placeholder={onboardingStep === 0 ? 'Enter your full name' : 'e.g. +919999999999'}
+                            type={onboardingStep === 3 ? 'number' : onboardingStep === 1 ? 'tel' : 'text'}
+                            placeholder={
+                              onboardingStep === 0 
+                                ? 'Enter your full name' 
+                                : onboardingStep === 1 
+                                ? 'e.g. +919999999999'
+                                : onboardingStep === 2
+                                ? 'Enter your school name'
+                                : 'Enter total number of students'
+                            }
                             disabled={submitting}
                             autoFocus
                             value={inputValue}
