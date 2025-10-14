@@ -7,7 +7,25 @@ const app = express();
 
 // Add CORS middleware for widget embedding
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = [
+    'https://marketingchat.entab.net',
+    'http://localhost:3000',
+    'http://localhost:5173'
+  ];
+  
+  const origin = req.headers.origin;
+  
+  // Check if the origin is in our allowed list
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (origin === 'null' || origin?.startsWith('file://')) {
+    // Allow local development
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    // For all other origins, we'll use a wildcard
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   

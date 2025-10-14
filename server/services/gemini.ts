@@ -3,9 +3,9 @@ import { MongoClient } from "mongodb";
 
 
 const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY || "AIzaSyDeeabQImj4RvQkb1OL82P46pIKW6Q7Bg0"
+  process.env.GEMINI_API_KEY || "AIzaSyASiJ06Z7P5_saYW9IoaaMK9EKG1JWN4Tg"
 );
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
 // Helper to fetch company context from MKB collection
 async function fetchCompanyContextFromMKB() {

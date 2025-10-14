@@ -8,6 +8,14 @@ class DatabaseService {
   private db: Db | null = null;
   private isConnecting = false;
 
+  async getDb(): Promise<Db> {
+    await this.connect();
+    if (!this.db) {
+      throw new Error('Database connection not established');
+    }
+    return this.db;
+  }
+
   async connect(): Promise<void> {
     if (this.client && this.db) return;
     

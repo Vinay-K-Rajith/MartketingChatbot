@@ -20,6 +20,13 @@ var DatabaseService = class {
   client = null;
   db = null;
   isConnecting = false;
+  async getDb() {
+    await this.connect();
+    if (!this.db) {
+      throw new Error("Database connection not established");
+    }
+    return this.db;
+  }
   async connect() {
     if (this.client && this.db) return;
     if (this.isConnecting) {
@@ -189,9 +196,9 @@ var storage = new MongoStorage();
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { MongoClient as MongoClient2 } from "mongodb";
 var genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY || "AIzaSyDeeabQImj4RvQkb1OL82P46pIKW6Q7Bg0"
+  process.env.GEMINI_API_KEY || "AIzaSyASiJ06Z7P5_saYW9IoaaMK9EKG1JWN4Tg"
 );
-var model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+var model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 async function fetchCompanyContextFromMKB() {
   const mongoUrl3 = process.env.MONGO_URL;
   const dbName2 = "test";
@@ -575,6 +582,61 @@ async function testWorkflow(workflowId, testInput) {
 // server/routes.ts
 var mongoUrl2 = process.env.MONGO_URL;
 async function registerRoutes(app2) {
+  app2.post("/api/reviews", async (req, res) => {
+    try {
+      console.log("Received review submission:", req.body);
+      const { rating, comment = "" } = req.body;
+      if (!rating || rating < 1 || rating > 5) {
+        console.log("Invalid rating:", rating);
+        return res.status(400).json({
+          success: false,
+          error: "Invalid rating. Must be between 1 and 5"
+        });
+      }
+      const db = await database_default.getDb();
+      if (!db) {
+        console.error("Failed to get database connection");
+        return res.status(500).json({
+          success: false,
+          error: "Database connection failed"
+        });
+      }
+      const collection = db.collection("entab_reviews");
+      const reviewData = {
+        rating: Number(rating),
+        comment: String(comment).trim(),
+        timestamp: /* @__PURE__ */ new Date(),
+        userAgent: req.headers["user-agent"] || "unknown"
+      };
+      console.log("Inserting review:", reviewData);
+      const result = await collection.insertOne(reviewData);
+      if (!result.acknowledged) {
+        console.error("MongoDB insert not acknowledged");
+        return res.status(500).json({
+          success: false,
+          error: "Failed to save review"
+        });
+      }
+      console.log("Review saved successfully:", result.insertedId);
+      res.json({
+        success: true,
+        id: result.insertedId,
+        message: "Review submitted successfully"
+      });
+      const review = {
+        rating,
+        comment,
+        timestamp: /* @__PURE__ */ new Date()
+      };
+      await collection.insertOne(review);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to save review",
+        details: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
   app2.get("/api/kb/articles", async (req, res) => {
     try {
       const col = await database_default.getKnowledgeBaseCollection();
@@ -1048,6 +1110,90 @@ async function registerRoutes(app2) {
         position: 'bottom-right'
       };
       const styles = \`
+        /* --- Review Dialog Styles --- */
+        .review-dialog {
+          display: none;
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          padding: 20px;
+          border-radius: 12px;
+          box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+          z-index: 10;
+          width: 90%;
+          max-width: 320px;
+          text-align: center;
+        }
+        .review-dialog.active {
+          display: block;
+        }
+        .review-dialog h2 {
+          margin: 0 0 15px;
+          font-size: 18px;
+          color: #333;
+        }
+        .star-rating {
+          display: flex;
+          justify-content: center;
+          gap: 8px;
+          margin: 15px 0;
+        }
+        .star-rating button {
+          background: none;
+          border: none;
+          font-size: 24px;
+          color: #ccc;
+          cursor: pointer;
+          transition: color 0.2s;
+        }
+        .star-rating button.active {
+          color: #ffd700;
+        }
+        .review-comment {
+          width: 100%;
+          margin: 10px 0;
+          padding: 8px;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          resize: vertical;
+          min-height: 60px;
+        }
+        .review-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 15px;
+        }
+        .review-actions button {
+          padding: 8px 16px;
+          border-radius: 6px;
+          border: none;
+          cursor: pointer;
+          font-size: 14px;
+        }
+        .review-skip {
+          background: #f0f0f0;
+          color: #666;
+        }
+        .review-submit {
+          background: #667eea;
+          color: white;
+        }
+        .review-overlay {
+          display: none;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 5;
+        }
+        .review-overlay.active {
+          display: block;
+        }
         /* --- Chatbot Widget CSS: Always 70% of Viewport Height --- */
         .chatbot-container,
         .chatbot-widget,
@@ -1273,14 +1419,14 @@ async function registerRoutes(app2) {
         @media (max-width: 600px) {
           .chatbot-widget {
             width: 100vw;
-            height: 70vh;
+            height: calc(70vh - 20px);
             right: 0;
             left: 0;
             border-radius: 0;
             min-width: 0;
             min-height: 0;
             max-width: 100vw;
-            max-height: 70vh;
+            max-height: calc(70vh - 20px);
           }
           .chatbot-container {
             bottom: 0 !important;
@@ -1320,7 +1466,9 @@ async function registerRoutes(app2) {
       styleSheet.textContent = styles;
       document.head.appendChild(styleSheet);
       // Remove AI badge from button, add it to header
-      const chatbotHTML = '<div class="chatbot-container ' + config.position + '"><button class="chatbot-button" id="chatbotToggle">' + config.buttonIcon + '</button><div class="chatbot-widget" id="chatbotWidget"><div class="chatbot-header"><div class="chatbot-title">' + config.chatbotTitle + '<span class="ai-badge">AI</span></div><button class="chatbot-close" id="chatbotClose">\xD7</button></div><iframe class="chatbot-iframe" src="' + config.chatbotUrl + '" title="AI Chatbot" seamless></iframe></div></div>';
+      const reviewDialogHTML = '<div class="review-overlay" id="reviewOverlay"></div><div class="review-dialog" id="reviewDialog"><h2>Rate your chat</h2><p>How was your experience?</p><div class="star-rating" id="starRating"><button data-rating="1">\u2605</button><button data-rating="2">\u2605</button><button data-rating="3">\u2605</button><button data-rating="4">\u2605</button><button data-rating="5">\u2605</button></div><textarea class="review-comment" id="reviewComment" placeholder="Add a comment (optional)"></textarea><div class="review-actions"><button class="review-skip" id="reviewSkip">Skip</button><button class="review-submit" id="reviewSubmit">Submit</button></div></div>';
+
+      const chatbotHTML = '<div class="chatbot-container ' + config.position + '"><button class="chatbot-button" id="chatbotToggle">' + config.buttonIcon + '</button><div class="chatbot-widget" id="chatbotWidget"><div class="chatbot-header"><div class="chatbot-title">' + config.chatbotTitle + '<span class="ai-badge">AI</span></div><button class="chatbot-close" id="chatbotClose">\xD7</button></div><iframe class="chatbot-iframe" src="' + config.chatbotUrl + '" title="AI Chatbot" seamless></iframe>' + reviewDialogHTML + '</div></div>';
       function initializeChatbot() {
         const container = document.createElement('div');
         container.innerHTML = chatbotHTML;
@@ -1328,11 +1476,107 @@ async function registerRoutes(app2) {
         const chatbotToggle = document.getElementById('chatbotToggle');
         const chatbotWidget = document.getElementById('chatbotWidget');
         const chatbotClose = document.getElementById('chatbotClose');
+        const reviewDialog = document.getElementById('reviewDialog');
+        const reviewOverlay = document.getElementById('reviewOverlay');
+        const starRating = document.getElementById('starRating');
+        const reviewComment = document.getElementById('reviewComment');
+        const reviewSkip = document.getElementById('reviewSkip');
+        const reviewSubmit = document.getElementById('reviewSubmit');
+        let selectedRating = 0;
+        let reviewShown = false;
+        let chatOpenTime = 0;
+        let reviewTimer = null;
+
+        // Star rating functionality
+        starRating.addEventListener('click', (e) => {
+          const button = e.target.closest('button');
+          if (!button) return;
+          
+          selectedRating = parseInt(button.dataset.rating);
+          const stars = starRating.querySelectorAll('button');
+          stars.forEach((star, index) => {
+            star.classList.toggle('active', index < selectedRating);
+          });
+        });
+
+        // Handle review submission
+        reviewSubmit.addEventListener('click', async () => {
+          if (selectedRating === 0) {
+            alert('Please select a rating');
+            return;
+          }
+
+          reviewSubmit.disabled = true;
+          reviewSubmit.textContent = 'Submitting...';
+
+          try {
+            console.log('Submitting review:', {
+              rating: selectedRating,
+              comment: reviewComment.value.trim()
+            });
+
+            const apiUrl = 'https://marketingchat.entab.net/api/reviews';
+              
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                rating: selectedRating,
+                comment: reviewComment.value.trim()
+              })
+            });
+
+            const result = await response.json();
+            console.log('Review submission response:', result);
+
+            if (response.ok && result.success) {
+              reviewDialog.classList.remove('active');
+              reviewOverlay.classList.remove('active');
+              localStorage.setItem('entab_review_submitted', 'true');
+              chatbotWidget.classList.remove('active');
+              chatbotToggle.style.display = 'flex';
+            } else {
+              const errorMessage = result.error || 'Failed to submit review. Please try again.';
+              console.error('Review submission failed:', errorMessage);
+              alert(errorMessage);
+            }
+          } catch (err) {
+            console.error('Review submission error:', err);
+            alert('Network error while submitting review. Please check your connection and try again.');
+          } finally {
+            reviewSubmit.disabled = false;
+            reviewSubmit.textContent = 'Submit';
+          }
+        });
+
+        // Handle review skip
+        reviewSkip.addEventListener('click', () => {
+          reviewDialog.classList.remove('active');
+          reviewOverlay.classList.remove('active');
+          localStorage.setItem('entab_review_skipped', 'true');
+        });
+
         chatbotToggle.addEventListener('click', () => {
           chatbotWidget.classList.add('active');
           chatbotToggle.style.display = 'none';
+          chatOpenTime = Date.now();
         });
-        chatbotClose.addEventListener('click', () => {
+
+        chatbotClose.addEventListener('click', (e) => {
+          // Check if chat has been open for at least 25 seconds
+          const chatDuration = Date.now() - chatOpenTime;
+          
+          if (chatDuration >= 25000 && // 25 seconds
+              !reviewShown && 
+              !localStorage.getItem('entab_review_submitted') && 
+              !localStorage.getItem('entab_review_skipped')) {
+            e.preventDefault();
+            reviewDialog.classList.add('active');
+            reviewOverlay.classList.add('active');
+            reviewShown = true;
+            return;
+          }
+
           chatbotWidget.classList.remove('active');
           chatbotToggle.style.display = 'flex';
         });
@@ -1648,7 +1892,19 @@ function serveStatic(app2) {
 // server/index.ts
 var app = express2();
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  const allowedOrigins = [
+    "https://marketingchat.entab.net",
+    "http://localhost:3000",
+    "http://localhost:5173"
+  ];
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else if (origin === "null" || origin?.startsWith("file://")) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else {
+    res.header("Access-Control-Allow-Origin", "*");
+  }
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   if (req.method === "OPTIONS") {
