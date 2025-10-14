@@ -62,7 +62,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const collection = db.collection('entab_reviews');
+      const collection = db.collection('entab_review');
       const reviewData = {
         rating: Number(rating),
         comment: String(comment).trim(),
