@@ -552,6 +552,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         conversionRateChangeType = 'up';
       }
       
+      // Average rating from entab_review collection
+      let averageRating = 0;
+      try {
+        const db = await databaseService.getDb();
+        const reviewsCol = db.collection('entab_review');
+        const agg = await reviewsCol.aggregate([
+          { $group: { _id: null, avgRating: { $avg: '$rating' }, count: { $sum: 1 } } }
+        ]).toArray();
+        if (agg.length > 0 && typeof agg[0].avgRating === 'number') {
+          averageRating = Number(agg[0].avgRating.toFixed(1));
+        }
+      } catch (e) {
+        console.warn('Failed to compute average rating:', e);
+      }
+      
       res.json({
         totalMessages,
         totalMessagesChange: messageChange,
@@ -567,7 +582,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         conversionRateChangeType: conversionRateChangeType,
         totalSessions,
         totalSessionsChange,
-        totalSessionsChangeType: totalSessionsChangeType
+        totalSessionsChangeType: totalSessionsChangeType,
+        averageRating
       });
       
       // Log final calculated values for verification
@@ -579,7 +595,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalSessions,
         totalSessionsChange,
         conversionRate,
-        conversionRateChange
+        conversionRateChange,
+        averageRating
       });
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch dashboard stats', details: err instanceof Error ? err.message : String(err) });
