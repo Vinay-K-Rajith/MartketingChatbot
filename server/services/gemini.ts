@@ -3,9 +3,9 @@ import { MongoClient } from "mongodb";
 
 
 const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY || "AIzaSyASiJ06Z7P5_saYW9IoaaMK9EKG1JWN4Tg"
+  process.env.GEMINI_API_KEY || ""
 );
-const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
 
 // Helper to fetch company context from MKB collection
 async function fetchCompanyContextFromMKB() {
@@ -25,7 +25,6 @@ async function fetchCompanyContextFromMKB() {
 export async function generateResponse(userMessage: string, sessionId?: string): Promise<string> {
   try {
     const companyContext = await fetchCompanyContextFromMKB();
-
     const systemPrompt = `You are a professional marketing AI assistant for Entab Infotech Pvt Ltd, a leading Indian software development company specializing in school management solutions. Your primary goal is to generate leads and promote Entab's products and services.
 
 IMPORTANT GUIDELINES:
@@ -51,6 +50,6 @@ Please respond to the user's query in a professional, marketing-focused way that
     return response.text();
   } catch (error) {
     console.error("Error generating AI response:", error);
-    return "I apologize, but I'm having trouble processing your request right now. Please try again later or contact our sales team directly for immediate assistance.";
+    return "I apologize, I m facing some issues, please contact at support@entab.org";
   }
 }
