@@ -50,6 +50,6 @@ Please respond to the user's query in a professional, marketing-focused way that
     return response.text();
   } catch (error) {
     console.error("Error generating AI response:", error);
-    return "I apologize, I m facing some issues, please contact at support@entab.org";
+    return "Kindly contact at support@entab.org";
   }
 }
